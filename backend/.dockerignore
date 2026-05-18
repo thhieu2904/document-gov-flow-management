@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite3
+.pytest_cache/
+.git/
+.gitignore
+uploads/
