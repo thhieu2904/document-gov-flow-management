@@ -5,9 +5,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import admin_stats, assignments, attachments, auth, dashboard, departments, documents, notifications, progress, users
+from app.api import assignments, attachments, auth, dashboard, departments, documents, reminders, users
 from app.core.config import settings
-from app.core.schema import ensure_runtime_schema
+from app.core.scheduler import configure_scheduler, shutdown_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -15,14 +15,15 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_runtime()
-    ensure_runtime_schema()
+    configure_scheduler(app)
     yield
+    shutdown_scheduler(app)
 
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
-    description="Workflow MVP for internal document and task management.",
+    version="1.0.0",
+    description="Simple manager/staff document assignment workflow.",
     lifespan=lifespan,
 )
 
@@ -41,9 +42,7 @@ app.include_router(documents.router, prefix="/api")
 app.include_router(assignments.router, prefix="/api")
 app.include_router(attachments.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
-app.include_router(progress.router, prefix="/api")
-app.include_router(notifications.router, prefix="/api")
-app.include_router(admin_stats.router, prefix="/api")
+app.include_router(reminders.router, prefix="/api")
 
 
 @app.exception_handler(Exception)

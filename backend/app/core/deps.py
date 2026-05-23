@@ -8,13 +8,6 @@ from app.core.database import get_db
 from app.models import User
 
 bearer = HTTPBearer(auto_error=False)
-
-ROLE_ORDER = {
-    "staff": 1,
-    "clerk": 2,
-    "manager": 3,
-    "admin": 4,
-}
 VALID_ROLES = {item["key"] for item in ROLES}
 
 
@@ -23,26 +16,19 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     if not credentials:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Chua dang nhap")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Chưa đăng nhập")
     user = get_auth_provider().verify_token(db, credentials.credentials)
     if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Tai khoan khong kha dung")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Tài khoản không khả dụng")
     return user
 
 
-def require_role(*roles: str):
-    def checker(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Khong du quyen")
-        return current_user
-
-    return checker
-
-
-def has_at_least(user: User, role: str) -> bool:
-    return ROLE_ORDER.get(user.role, 0) >= ROLE_ORDER.get(role, 999)
+def require_manager(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "manager":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ quản lý được thao tác")
+    return current_user
 
 
 def ensure_valid_role(role: str) -> None:
     if role not in VALID_ROLES:
-        raise HTTPException(status_code=400, detail="Vai tro khong hop le")
+        raise HTTPException(status_code=400, detail="Vai trò không hợp lệ")

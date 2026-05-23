@@ -27,6 +27,9 @@ class StorageProvider:
     def open_for_read(self, storage_key: str):
         raise NotImplementedError
 
+    def delete(self, storage_key: str) -> None:
+        raise NotImplementedError
+
 
 class R2StorageProvider(StorageProvider):
     def __init__(self) -> None:
@@ -64,6 +67,9 @@ class R2StorageProvider(StorageProvider):
             raise HTTPException(status_code=404, detail="File khong ton tai") from exc
         return obj["Body"]
 
+    def delete(self, storage_key: str) -> None:
+        self.client.delete_object(Bucket=settings.r2_bucket, Key=storage_key)
+
 
 class LocalStorageProvider(StorageProvider):
     def __init__(self) -> None:
@@ -87,6 +93,11 @@ class LocalStorageProvider(StorageProvider):
         if not str(target).startswith(str(self.base_path)) or not target.exists():
             raise HTTPException(status_code=404, detail="File khong ton tai")
         return target.open("rb")
+
+    def delete(self, storage_key: str) -> None:
+        target = (self.base_path / storage_key).resolve()
+        if str(target).startswith(str(self.base_path)) and target.exists():
+            target.unlink()
 
 
 def get_storage_provider(provider: str | None = None) -> StorageProvider:

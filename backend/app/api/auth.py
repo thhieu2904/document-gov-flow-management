@@ -7,7 +7,6 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import User
 from app.schemas import LoginRequest, PasswordChangeRequest, UserOut
-from app.services import audit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -41,7 +40,6 @@ def change_password(
     provider.login(db, current_user.email, payload.current_password)
     provider.update_password(db, current_user, payload.new_password)
     current_user.must_change_password = False
-    audit(db, current_user, "auth.change_password", "user", current_user.id, "Nguoi dung doi mat khau")
     db.commit()
     return {"ok": True}
 

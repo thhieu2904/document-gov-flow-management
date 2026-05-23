@@ -1,11 +1,12 @@
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
+VN_TZ = timezone(timedelta(hours=7))
 
 def new_uuid() -> str:
     return str(uuid.uuid4())
@@ -21,7 +22,6 @@ class Department(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text)
-    unit_type: Mapped[str] = mapped_column(String(30), default="department", index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
@@ -41,57 +41,32 @@ class User(Base):
     department_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("departments.id"), index=True)
     position_label: Mapped[str | None] = mapped_column(String(160))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
     department: Mapped[Department | None] = relationship(back_populates="members", foreign_keys=[department_id])
-
-    @property
-    def position(self) -> str | None:
-        return self.position_label
-
-    @position.setter
-    def position(self, value: str | None) -> None:
-        self.position_label = value
 
 
 class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    document_type: Mapped[str] = mapped_column(String(40), default="incoming", index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
     code: Mapped[str | None] = mapped_column(String(120), index=True)
-    arrival_number: Mapped[str | None] = mapped_column(String(80), index=True)
-    issuing_agency: Mapped[str | None] = mapped_column(String(255), index=True)
-    content: Mapped[str | None] = mapped_column(Text)
-    document_date: Mapped[date | None] = mapped_column(Date)
-    received_date: Mapped[date | None] = mapped_column(Date)
-    issued_date: Mapped[date | None] = mapped_column(Date)
-    due_date: Mapped[date | None] = mapped_column(Date, index=True)
+    summary: Mapped[str | None] = mapped_column(Text)
     priority: Mapped[str] = mapped_column(String(20), default="normal", index=True)
-    status: Mapped[str] = mapped_column(String(40), default="received", index=True)
+    status: Mapped[str] = mapped_column(String(40), default="draft", index=True)
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    owner_department_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("departments.id"), index=True)
+    department_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("departments.id"), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    deleted_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
-    delete_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
     creator: Mapped[User] = relationship(foreign_keys=[created_by])
-    owner_department: Mapped[Department | None] = relationship(foreign_keys=[owner_department_id])
-
-    @property
-    def current_department_id(self) -> str | None:
-        return self.owner_department_id
-
-    @current_department_id.setter
-    def current_department_id(self, value: str | None) -> None:
-        self.owner_department_id = value
+    department: Mapped[Department | None] = relationship(foreign_keys=[department_id])
 
 
 class DocumentAssignment(Base):
@@ -99,56 +74,22 @@ class DocumentAssignment(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     document_id: Mapped[str] = mapped_column(String(36), ForeignKey("documents.id"), nullable=False, index=True)
-    parent_assignment_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("document_assignments.id"), index=True)
-    sender_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), index=True)
-    sender_department_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("departments.id"), index=True)
-    receiver_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), index=True)
-    receiver_department_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("departments.id"), index=True)
-    assignment_role: Mapped[str] = mapped_column(String(30), default="primary", index=True)
-    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
-    action_type: Mapped[str] = mapped_column(String(60), default="forward", index=True)
+    assigned_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    assignee_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     instruction: Mapped[str | None] = mapped_column(Text)
+    result_note: Mapped[str | None] = mapped_column(Text)
     priority: Mapped[str] = mapped_column(String(20), default="normal", index=True)
-    due_date: Mapped[date | None] = mapped_column(Date, index=True)
-    pending_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
-    @property
-    def from_user_id(self) -> str | None:
-        return self.sender_user_id
-
-    @from_user_id.setter
-    def from_user_id(self, value: str | None) -> None:
-        self.sender_user_id = value
-
-    @property
-    def to_user_id(self) -> str | None:
-        return self.receiver_user_id
-
-    @to_user_id.setter
-    def to_user_id(self, value: str | None) -> None:
-        self.receiver_user_id = value
-
-    @property
-    def to_department_id(self) -> str | None:
-        return self.receiver_department_id
-
-    @to_department_id.setter
-    def to_department_id(self, value: str | None) -> None:
-        self.receiver_department_id = value
-
-    @property
-    def note(self) -> str | None:
-        return self.instruction
-
-    @note.setter
-    def note(self, value: str | None) -> None:
-        self.instruction = value
+    document: Mapped[Document] = relationship(foreign_keys=[document_id])
+    assignee: Mapped[User] = relationship(foreign_keys=[assignee_id])
+    manager: Mapped[User] = relationship(foreign_keys=[assigned_by])
 
 
 class DocumentComment(Base):
@@ -160,7 +101,6 @@ class DocumentComment(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
 
 class DocumentAttachment(Base):
@@ -178,19 +118,6 @@ class DocumentAttachment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
-class DocumentHistoryLog(Base):
-    __tablename__ = "document_history_logs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    document_id: Mapped[str] = mapped_column(String(36), ForeignKey("documents.id"), nullable=False, index=True)
-    assignment_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("document_assignments.id"), index=True)
-    user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), index=True)
-    action_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    description: Mapped[str | None] = mapped_column(Text)
-    extra: Mapped[dict | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
-
-
 class Notification(Base):
     __tablename__ = "notifications"
 
@@ -203,3 +130,35 @@ class Notification(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
+class EmailLog(Base):
+    __tablename__ = "email_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    log_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    document_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("documents.id"), index=True)
+    assignment_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("document_assignments.id"), index=True)
+    recipient_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    recipient_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    provider_response: Mapped[str | None] = mapped_column(Text)
+    due_at_snapshot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    scheduled_for_date: Mapped[str | None] = mapped_column(String(30), index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, index=True)
+
+    document: Mapped[Document | None] = relationship(foreign_keys=[document_id])
+    assignment: Mapped[DocumentAssignment | None] = relationship(foreign_keys=[assignment_id])
+    recipient: Mapped[User | None] = relationship(foreign_keys=[recipient_user_id])

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     smtp_from_name: str = "He thong quan ly van ban"
     smtp_use_tls: bool = True
     email_enabled: bool = False
+    resend_api_key: str = ""
 
     model_config = SettingsConfigDict(
         env_file=(ROOT_DIR / ".env", BACKEND_DIR / ".env"),

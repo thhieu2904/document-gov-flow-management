@@ -36,6 +36,35 @@ button:disabled {
   opacity: 0.58;
 }
 
+.app-shell {
+  display: flex;
+  min-height: calc(100vh - 84px);
+}
+
+.app-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 280px;
+  border-right: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 0.75rem;
+}
+
+.app-sidebar-main {
+  min-height: 0;
+  flex: 1 1 0%;
+}
+
+.doc-table {
+  width: 100%;
+  min-width: 1240px;
+}
+
+.doc-table-nowrap {
+  white-space: nowrap;
+}
+
 .primary-btn {
   display: inline-flex;
   align-items: center;

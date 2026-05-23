@@ -1,106 +1,79 @@
-from datetime import date
+import io
+from datetime import date, datetime, time, timedelta
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import openpyxl
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.constants import (
-    ACTION_TYPE_LABELS,
-    ASSIGNMENT_ROLE_LABELS,
-    ASSIGNMENT_STATUS_LABELS,
-    DOCUMENT_STATUS_LABELS,
-    DOCUMENT_TYPES,
-    PRIORITY_LABELS,
-)
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_manager
+from app.core.email import email_assignment_created, email_document_deleted
 from app.core.storage import get_storage_provider
-from app.models import (
-    Document,
-    DocumentAssignment,
-    DocumentAttachment,
-    DocumentComment,
-    DocumentHistoryLog,
-    User,
-    now_utc,
-)
-from app.schemas import AssignmentCreate, CommentCreate, DocumentCreate, DocumentUpdate, DocumentVoidRequest
+from app.email_utils import send_and_log_task
+from app.models import Document, DocumentAssignment, DocumentAttachment, DocumentComment, EmailLog, Notification, User, now_utc, VN_TZ
+from app.schemas import AssignmentCreate, CommentCreate, DocumentCreate, DocumentUpdate
 from app.services import (
-    assignment_target_filter,
-    assignment_targets_user,
-    assignment_visible_filter,
     attachment_to_dict,
-    can_complete_assignment,
-    can_forward_assignment,
-    can_mutate_document,
-    can_return_assignment,
-    can_start_assignment,
-    ensure_can_mutate,
+    document_assignments,
     ensure_can_view,
-    history,
-    notify_assignment_receivers,
+    ensure_manager_owner,
+    notify,
+    sync_document_status,
 )
-from app.workflow_service import transition_document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-LOCKED_FOR_MUTATION_STATUSES = {"issued", "archived", "voided"}
+
+def user_dict(user: User | None) -> dict | None:
+    if not user:
+        return None
+    return {"id": user.id, "full_name": user.full_name, "email": user.email, "role": user.role, "department_id": user.department_id}
 
 
-def document_assignments(db: Session, document_id: str) -> list[DocumentAssignment]:
-    return db.scalars(select(DocumentAssignment).where(DocumentAssignment.document_id == document_id)).all()
-
-
-def document_dict(doc: Document, *, is_unread: bool = False) -> dict:
-    return {
-        "id": doc.id,
-        "document_type": doc.document_type,
-        "title": doc.title,
-        "code": doc.code,
-        "arrival_number": doc.arrival_number,
-        "issuing_agency": doc.issuing_agency,
-        "content": doc.content,
-        "document_date": doc.document_date,
-        "received_date": doc.received_date,
-        "issued_date": doc.issued_date,
-        "due_date": doc.due_date,
-        "priority": doc.priority,
-        "status": doc.status,
-        "created_by": doc.created_by,
-        "owner_department_id": doc.owner_department_id,
-        "current_department_id": doc.owner_department_id,
-        "completed_at": doc.completed_at,
-        "archived_at": doc.archived_at,
-        "deleted_at": doc.deleted_at,
-        "created_at": doc.created_at,
-        "updated_at": doc.updated_at,
-        "is_unread": is_unread,
-    }
-
-
-def assignment_dict(item: DocumentAssignment) -> dict:
+def assignment_dict(item: DocumentAssignment, assignee: User | None = None) -> dict:
     return {
         "id": item.id,
         "document_id": item.document_id,
-        "parent_assignment_id": item.parent_assignment_id,
-        "sender_user_id": item.sender_user_id,
-        "sender_department_id": item.sender_department_id,
-        "receiver_user_id": item.receiver_user_id,
-        "receiver_department_id": item.receiver_department_id,
-        "assignment_role": item.assignment_role,
-        "status": item.status,
-        "action_type": item.action_type,
+        "assigned_by": item.assigned_by,
+        "assignee_id": item.assignee_id,
+        "assignee": user_dict(assignee or item.assignee),
         "instruction": item.instruction,
+        "result_note": item.result_note,
         "priority": item.priority,
-        "due_date": item.due_date,
-        "pending_at": item.pending_at,
+        "status": item.status,
+        "due_at": item.due_at,
         "started_at": item.started_at,
+        "submitted_at": item.submitted_at,
         "completed_at": item.completed_at,
-        "returned_at": item.returned_at,
-        "viewed_at": item.viewed_at,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
+    }
+
+
+def document_dict(doc: Document, assignments: list[DocumentAssignment] | None = None) -> dict:
+    assignments = assignments or []
+    return {
+        "id": doc.id,
+        "title": doc.title,
+        "code": doc.code,
+        "summary": doc.summary,
+        "priority": doc.priority,
+        "status": doc.status,
+        "display_status": derived_document_status(doc),
+        "issued_at": doc.issued_at,
+        "due_at": doc.due_at,
+        "created_by": doc.created_by,
+        "department_id": doc.department_id,
+        "completed_at": doc.completed_at,
+        "created_at": doc.created_at,
+        "updated_at": doc.updated_at,
+        "assignment_count": len(assignments),
+        "completed_count": len([item for item in assignments if item.status == "completed"]),
     }
 
 
@@ -112,460 +85,500 @@ def comment_dict(item: DocumentComment) -> dict:
         "user_id": item.user_id,
         "content": item.content,
         "created_at": item.created_at,
-        "updated_at": item.updated_at,
     }
 
 
-def history_dict(item: DocumentHistoryLog) -> dict:
-    return {
-        "id": item.id,
-        "document_id": item.document_id,
-        "assignment_id": item.assignment_id,
-        "user_id": item.user_id,
-        "action_type": item.action_type,
-        "description": item.description,
-        "extra": item.extra,
-        "created_at": item.created_at,
-    }
+def visible_document_ids_for_user(user: User):
+    if user.role == "manager":
+        return select(Document.id).where(Document.created_by == user.id)
+    return select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == user.id)
 
 
-def visible_document_query(user: User):
-    query = select(Document).where(Document.deleted_at.is_(None))
-    if user.role == "admin":
-        return query
-    assignment_doc_ids = select(DocumentAssignment.document_id).where(assignment_visible_filter(user))
-    return query.where(or_(Document.created_by == user.id, Document.id.in_(assignment_doc_ids)))
-
-
-def apply_document_filters(query, search: str | None = None, due_from: date | None = None, due_before: date | None = None):
+def apply_document_search(query, search: str | None):
     if search:
         pattern = f"%{search.strip()}%"
-        query = query.where(
-            or_(
-                Document.title.ilike(pattern),
-                Document.code.ilike(pattern),
-                Document.arrival_number.ilike(pattern),
-                Document.issuing_agency.ilike(pattern),
-            )
-        )
-    if due_from:
-        query = query.where(Document.due_date >= due_from)
-    if due_before:
-        query = query.where(Document.due_date <= due_before)
+        query = query.where(or_(Document.title.ilike(pattern), Document.code.ilike(pattern), Document.summary.ilike(pattern)))
     return query
 
 
-def unread_document_ids(db: Session, user: User, document_ids: list[str]) -> set[str]:
-    if user.role == "admin" or not document_ids:
-        return set()
-    rows = db.scalars(
-        select(DocumentAssignment.document_id).where(
-            DocumentAssignment.document_id.in_(document_ids),
-            assignment_target_filter(user),
-            DocumentAssignment.viewed_at.is_(None),
-        )
-    ).all()
-    return set(rows)
+def derived_document_status(doc: Document) -> str:
+    if doc.status == "completed":
+        if doc.due_at and doc.completed_at and doc.completed_at > doc.due_at:
+            return "completed_late"
+        return "completed"
+    if doc.due_at and doc.due_at < now_utc():
+        return "overdue"
+    if doc.due_at and doc.due_at <= now_utc() + timedelta(days=3):
+        return "due_soon"
+    return doc.status
 
 
-def paginate(db: Session, query, page: int, size: int, current_user: User | None = None) -> dict:
+def period_bounds(period: str, anchor_date: date | None) -> tuple[datetime | None, datetime | None]:
+    if period == "all":
+        return None, None
+    anchor = anchor_date or datetime.now(VN_TZ).date()
+    if period == "week":
+        start_date = anchor - timedelta(days=anchor.weekday())
+        end_date = start_date + timedelta(days=7)
+    elif period == "month":
+        start_date = anchor.replace(day=1)
+        end_date = anchor.replace(year=anchor.year + 1, month=1, day=1) if anchor.month == 12 else anchor.replace(month=anchor.month + 1, day=1)
+    else:
+        raise HTTPException(status_code=400, detail="Kỳ xem không hợp lệ")
+    return datetime.combine(start_date, time.min).replace(tzinfo=VN_TZ), datetime.combine(end_date, time.min).replace(tzinfo=VN_TZ)
+
+
+def in_period(doc: Document, start: datetime | None, end: datetime | None) -> bool:
+    if not start or not end:
+        return True
+    values = [doc.due_at, doc.issued_at, doc.completed_at]
+    return any(value is not None and start <= value < end for value in values)
+
+
+def sort_documents(docs: list[Document], assignments_by_doc: dict[str, list[DocumentAssignment]], sort_by: str, sort_dir: str) -> list[Document]:
+    direction = -1 if sort_dir == "desc" else 1
+
+    def progress(doc: Document) -> float:
+        assignments = assignments_by_doc.get(doc.id, [])
+        return len([item for item in assignments if item.status == "completed"]) / len(assignments) if assignments else 0
+
+    def value(doc: Document):
+        if sort_by == "status":
+            return derived_document_status(doc)
+        if sort_by == "progress":
+            return progress(doc)
+        if sort_by == "priority":
+            return {"urgent": 3, "high": 2, "normal": 1}.get(doc.priority, 0)
+        if sort_by in {"issued_at", "due_at", "created_at"}:
+            return getattr(doc, sort_by) or datetime.min.replace(tzinfo=now_utc().tzinfo)
+        if sort_by in {"code", "title"}:
+            return (getattr(doc, sort_by) or "").lower()
+        return doc.updated_at or datetime.min.replace(tzinfo=now_utc().tzinfo)
+
+    return sorted(docs, key=value, reverse=direction < 0)
+
+
+def paginate(db: Session, query, page: int, size: int) -> dict:
     safe_page = max(page, 1)
     safe_size = min(max(size, 1), 100)
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
-    items = db.scalars(query.offset((safe_page - 1) * safe_size).limit(safe_size)).all()
-    unread_ids = unread_document_ids(db, current_user, [item.id for item in items]) if current_user else set()
-    return {"items": [document_dict(item, is_unread=item.id in unread_ids) for item in items], "page": safe_page, "size": safe_size, "total": total}
+    docs = db.scalars(query.offset((safe_page - 1) * safe_size).limit(safe_size)).all()
+    assignment_rows = db.scalars(select(DocumentAssignment).where(DocumentAssignment.document_id.in_([doc.id for doc in docs]))).all() if docs else []
+    by_doc: dict[str, list[DocumentAssignment]] = {}
+    for item in assignment_rows:
+        by_doc.setdefault(item.document_id, []).append(item)
+    return {"items": [document_dict(doc, by_doc.get(doc.id, [])) for doc in docs], "page": safe_page, "size": safe_size, "total": total}
 
 
-@router.get("/metadata")
-def metadata(current_user: User = Depends(get_current_user)):
-    return {
-        "document_types": DOCUMENT_TYPES,
-        "document_statuses": DOCUMENT_STATUS_LABELS,
-        "assignment_roles": ASSIGNMENT_ROLE_LABELS,
-        "assignment_statuses": ASSIGNMENT_STATUS_LABELS,
-        "action_types": ACTION_TYPE_LABELS,
-        "priorities": PRIORITY_LABELS,
+@router.get("/export")
+def export_documents(
+    scope: str = "assigned_by_me",
+    status: list[str] = Query(default=[]),
+    priority: list[str] = Query(default=[]),
+    search: str | None = None,
+    period: str = "all",
+    anchor_date: date | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    sort_by: str = "due_at",
+    sort_dir: str = "asc",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = select(Document)
+    if current_user.role == "manager":
+        if scope == "my_tasks":
+            query = query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == current_user.id)))
+        else:
+            query = query.where(Document.created_by == current_user.id)
+    else:
+        query = query.where(Document.id.in_(visible_document_ids_for_user(current_user)))
+    query = apply_document_search(query, search)
+    all_docs = db.scalars(query).all()
+    assignment_rows = db.scalars(select(DocumentAssignment).where(DocumentAssignment.document_id.in_([doc.id for doc in all_docs]))).all() if all_docs else []
+    by_doc: dict[str, list[DocumentAssignment]] = {}
+    for item in assignment_rows:
+        by_doc.setdefault(item.document_id, []).append(item)
+    
+    if period == "custom":
+        start = datetime.combine(start_date, time.min).replace(tzinfo=VN_TZ) if start_date else None
+        end = datetime.combine(end_date, time.max).replace(tzinfo=VN_TZ) if end_date else None
+    else:
+        start, end = period_bounds(period, anchor_date)
+        
+    filtered = [doc for doc in all_docs if in_period(doc, start, end)]
+    if status:
+        selected = set(status)
+        filtered = [doc for doc in filtered if ("open" in selected and doc.status != "completed") or derived_document_status(doc) in selected]
+    if priority:
+        selected_priority = set(priority)
+        filtered = [doc for doc in filtered if doc.priority in selected_priority]
+    sorted_docs = sort_documents(filtered, by_doc, sort_by, sort_dir)
+
+    from openpyxl.styles import Alignment
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Danh sách văn bản"
+
+    # Title
+    ws.merge_cells('A1:I1')
+    title_cell = ws['A1']
+    title_cell.value = "BÁO CÁO TÌNH HÌNH XỬ LÝ VĂN BẢN"
+    title_cell.font = Font(name='Times New Roman', size=16, bold=True)
+    title_cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    # Subtitle
+    if period == "custom" and start and end:
+        period_text = f"Từ ngày {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}"
+    elif period == "week" and start and end:
+        period_text = f"Tuần từ {start.strftime('%d/%m/%Y')} đến {(end - timedelta(days=1)).strftime('%d/%m/%Y')}"
+    elif period == "month" and start:
+        period_text = f"Tháng {start.strftime('%m/%Y')}"
+    else:
+        period_text = "Tất cả thời gian"
+
+    ws['A2'] = f"Kỳ báo cáo: {period_text}"
+    ws['A2'].font = Font(name='Times New Roman', size=12, italic=True)
+    ws['A2'].alignment = Alignment(horizontal='left')
+    
+    # Calculate stats
+    total_docs = len(sorted_docs)
+    completed_docs = sum(1 for d in sorted_docs if d.status == "completed" or d.status == "completed_late")
+    in_progress_docs = sum(1 for d in sorted_docs if d.status == "in_progress")
+    overdue_docs = sum(1 for d in sorted_docs if derived_document_status(d) in ["overdue", "completed_late"])
+
+    # Stats
+    ws['A4'] = f"Tổng số văn bản: {total_docs}   |   Hoàn tất: {completed_docs}   |   Đang thực hiện: {in_progress_docs}   |   Quá hạn/Trễ: {overdue_docs}"
+    ws['A4'].font = Font(name='Times New Roman', size=12, bold=True)
+
+    headers = [
+        "Số hiệu", "Trích yếu", "Ngày tạo", "Ngày ban hành", "Hạn hoàn thành",
+        "Tiến độ", "Trạng thái", "Độ ưu tiên", "Phân công"
+    ]
+    # We will append the headers manually at row 6
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=6, column=col_num)
+        cell.value = header
+        cell.fill = PatternFill(start_color="214B74", end_color="214B74", fill_type="solid")
+        cell.font = Font(name='Times New Roman', color="FFFFFF", size=12, bold=True)
+        ws.column_dimensions[get_column_letter(col_num)].width = 20
+
+    ws.column_dimensions['B'].width = 60
+    ws.column_dimensions['I'].width = 70
+
+    def fmt_dt(dt):
+        if not dt:
+            return ""
+        local_dt = dt.astimezone() if dt.tzinfo else dt
+        return local_dt.strftime("%d/%m/%Y %H:%M")
+
+    status_map = {
+        "draft": "Chưa giao", "in_progress": "Đang thực hiện", "completed": "Hoàn tất",
+        "completed_late": "Hoàn tất trễ hạn", "due_soon": "Sắp đến hạn", "overdue": "Quá hạn",
     }
+    priority_map = {"normal": "Thường", "high": "Khẩn", "urgent": "Gấp"}
+    assign_status_map = {"pending": "Chờ xử lý", "in_progress": "Đang làm", "completed": "Xong", "overdue": "Trễ"}
+
+    status_color_map = {
+        "Chưa giao": "64748B",
+        "Đang thực hiện": "D97706",
+        "Hoàn tất": "059669",
+        "Hoàn tất trễ hạn": "059669",
+        "Sắp đến hạn": "DC2626",
+        "Quá hạn": "DC2626",
+    }
+    priority_color_map = {
+        "Khẩn": "D97706",
+        "Gấp": "DC2626",
+    }
+
+    for idx, doc in enumerate(sorted_docs, start=7):
+        assignments = by_doc.get(doc.id, [])
+        completed_count = len([a for a in assignments if a.status == "completed"])
+        progress = f"{completed_count}/{len(assignments)}"
+        display_status = status_map.get(derived_document_status(doc), doc.status)
+        doc_priority = priority_map.get(doc.priority, doc.priority)
+
+        assignees_text = "\n".join([f"- {a.assignee.full_name if a.assignee else '?'} ({assign_status_map.get(a.status, a.status)})" for a in assignments])
+
+        row_data = [
+            doc.code or "-",
+            doc.title,
+            fmt_dt(doc.created_at),
+            fmt_dt(doc.issued_at),
+            fmt_dt(doc.due_at),
+            progress,
+            display_status,
+            doc_priority,
+            assignees_text
+        ]
+        
+        for col_num, value in enumerate(row_data, 1):
+            cell = ws.cell(row=idx, column=col_num)
+            cell.value = value
+            cell.font = Font(name='Times New Roman', size=12)
+            if col_num in [2, 9]: # Trích yếu and Phân công
+                cell.alignment = Alignment(wrap_text=True, vertical='top')
+            else:
+                cell.alignment = Alignment(vertical='top')
+
+        if display_status in status_color_map:
+            ws.cell(row=idx, column=7).font = Font(name='Times New Roman', size=12, color=status_color_map[display_status], bold=True)
+        if doc_priority in priority_color_map:
+            ws.cell(row=idx, column=8).font = Font(name='Times New Roman', size=12, color=priority_color_map[doc_priority], bold=True)
+
+    ws.auto_filter.ref = f"A6:I{6 + len(sorted_docs)}"
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"Bao_cao_van_ban_{datetime.now(VN_TZ).strftime('%Y%m%d_%H%M')}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 
 @router.get("")
 def list_documents(
+    scope: str = "assigned_by_me",
+    status: list[str] = Query(default=[]),
+    priority: list[str] = Query(default=[]),
     search: str | None = None,
-    status: str | None = None,
-    document_type: str | None = None,
-    department_id: str | None = None,
-    due_from: date | None = None,
-    due_before: date | None = None,
+    period: str = "all",
+    anchor_date: date | None = None,
+    sort_by: str = "due_at",
+    sort_dir: str = "asc",
     page: int = 1,
     size: int = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = visible_document_query(current_user)
-    query = apply_document_filters(query, search, due_from, due_before)
+    query = select(Document)
+    if current_user.role == "manager":
+        if scope == "my_tasks":
+            query = query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == current_user.id)))
+        else:
+            query = query.where(Document.created_by == current_user.id)
+    else:
+        query = query.where(Document.id.in_(visible_document_ids_for_user(current_user)))
+    query = apply_document_search(query, search)
+    all_docs = db.scalars(query).all()
+    assignment_rows = db.scalars(select(DocumentAssignment).where(DocumentAssignment.document_id.in_([doc.id for doc in all_docs]))).all() if all_docs else []
+    by_doc: dict[str, list[DocumentAssignment]] = {}
+    for item in assignment_rows:
+        by_doc.setdefault(item.document_id, []).append(item)
+    start, end = period_bounds(period, anchor_date)
+    filtered = [doc for doc in all_docs if in_period(doc, start, end)]
     if status:
-        query = query.where(Document.status == status)
-    if document_type:
-        query = query.where(Document.document_type == document_type)
-    if department_id:
-        query = query.where(Document.owner_department_id == department_id)
-    return paginate(db, query.order_by(Document.updated_at.desc()), page, size, current_user)
-
-
-@router.get("/incoming")
-def list_incoming(
-    queue: str | None = None,
-    search: str | None = None,
-    due_from: date | None = None,
-    due_before: date | None = None,
-    page: int = 1,
-    size: int = 20,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    query = visible_document_query(current_user).where(Document.document_type == "incoming")
-    query = apply_document_filters(query, search, due_from, due_before)
-    if queue == "received":
-        query = query.where(Document.status == "received")
-    elif queue in {"primary", "collaborator", "informed"}:
-        query = query.where(
-            Document.id.in_(
-                select(DocumentAssignment.document_id).where(
-                    DocumentAssignment.assignment_role == queue,
-                    DocumentAssignment.status != "completed",
-                    assignment_target_filter(current_user),
-                )
-            )
-        )
-    elif queue == "completed":
-        query = query.where(
-            Document.id.in_(
-                select(DocumentAssignment.document_id).where(
-                    DocumentAssignment.status == "completed",
-                    assignment_target_filter(current_user),
-                )
-            )
-        )
-    return paginate(db, query.order_by(Document.updated_at.desc()), page, size, current_user)
-
-
-@router.get("/outgoing")
-def list_outgoing(
-    queue: str | None = None,
-    search: str | None = None,
-    due_from: date | None = None,
-    due_before: date | None = None,
-    page: int = 1,
-    size: int = 20,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    query = visible_document_query(current_user).where(Document.document_type == "outgoing")
-    query = apply_document_filters(query, search, due_from, due_before)
-    if queue == "issued":
-        query = query.where(Document.status == "issued")
-    elif queue == "draft":
-        query = query.where(Document.status == "draft")
-    elif queue == "todo":
-        query = query.where(
-            Document.id.in_(
-                select(DocumentAssignment.document_id).where(
-                    DocumentAssignment.status != "completed",
-                    assignment_target_filter(current_user),
-                )
-            )
-        )
-    elif queue == "done":
-        query = query.where(
-            Document.id.in_(
-                select(DocumentAssignment.document_id).where(
-                    DocumentAssignment.status == "completed",
-                    assignment_target_filter(current_user),
-                )
-            )
-        )
-    return paginate(db, query.order_by(Document.updated_at.desc()), page, size, current_user)
+        selected = set(status)
+        filtered = [doc for doc in filtered if ("open" in selected and doc.status != "completed") or derived_document_status(doc) in selected]
+    if priority:
+        selected_priority = set(priority)
+        filtered = [doc for doc in filtered if doc.priority in selected_priority]
+    sorted_docs = sort_documents(filtered, by_doc, sort_by, sort_dir)
+    safe_page = max(page, 1)
+    safe_size = min(max(size, 1), 100)
+    start_index = (safe_page - 1) * safe_size
+    page_docs = sorted_docs[start_index:start_index + safe_size]
+    return {"items": [document_dict(doc, by_doc.get(doc.id, [])) for doc in page_docs], "page": safe_page, "size": safe_size, "total": len(sorted_docs)}
 
 
 @router.post("")
-def create_document(
-    payload: DocumentCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    if current_user.role not in {"admin", "clerk", "manager"}:
-        raise HTTPException(status_code=403, detail="Ban khong co quyen tiep nhan/tao van ban")
-    status = "draft" if payload.document_type == "outgoing" else "received"
-    doc = Document(**payload.model_dump(), status=status, created_by=current_user.id)
+def create_document(payload: DocumentCreate, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+    doc = Document(**payload.model_dump(), status="draft", created_by=current_user.id)
     db.add(doc)
-    db.flush()
-    history(db, current_user, "outgoing_draft" if payload.document_type == "outgoing" else "incoming_register", doc.id, doc.title)
     db.commit()
     db.refresh(doc)
     return document_dict(doc)
 
 
-@router.post("/incoming/receive")
-def receive_incoming_document(
-    payload: DocumentCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    payload.document_type = "incoming"
-    return create_document(payload, db, current_user)
-
-
-@router.post("/outgoing")
-def create_outgoing_document(
-    payload: DocumentCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    payload.document_type = "outgoing"
-    return create_document(payload, db, current_user)
-
-
 @router.get("/{document_id}")
-def get_document(
-    document_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def get_document(document_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     doc = db.get(Document, document_id)
-    if not doc or doc.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Khong tim thay van ban")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
     assignments = document_assignments(db, doc.id)
     ensure_can_view(current_user, doc, assignments)
     comments = db.scalars(select(DocumentComment).where(DocumentComment.document_id == doc.id).order_by(DocumentComment.created_at)).all()
     attachments = db.scalars(select(DocumentAttachment).where(DocumentAttachment.document_id == doc.id).order_by(DocumentAttachment.created_at.desc())).all()
-    logs = db.scalars(select(DocumentHistoryLog).where(DocumentHistoryLog.document_id == doc.id).order_by(DocumentHistoryLog.created_at.desc())).all()
-    my_assignments = [
-        item
-        for item in assignments
-        if assignment_targets_user(current_user, item)
-    ]
-    marked_viewed = False
-    if current_user.role != "admin":
-        for item in my_assignments:
-            if item.viewed_at is None:
-                item.viewed_at = now_utc()
-                marked_viewed = True
-        if marked_viewed:
-            db.commit()
-    actionable_assignments = assignments if current_user.role == "admin" else my_assignments
-
-    def my_assignment_dict(item: DocumentAssignment) -> dict:
-        d = assignment_dict(item)
-        d["is_unread"] = item.viewed_at is None
-        d["can_start"] = can_start_assignment(current_user, item)
-        d["can_complete"] = can_complete_assignment(current_user, item)
-        d["can_forward"] = can_forward_assignment(current_user, item)
-        d["can_return"] = can_return_assignment(current_user, item)
-        return d
-
+    uploader_ids = {item.uploaded_by for item in attachments}
+    uploaders = {item.id: item for item in db.scalars(select(User).where(User.id.in_(uploader_ids))).all()} if uploader_ids else {}
     return {
-        **document_dict(doc, is_unread=any(item.viewed_at is None for item in my_assignments)),
-        "assignments": [assignment_dict(item) | {"is_unread": item.viewed_at is None} for item in assignments],
-        "my_assignments": [my_assignment_dict(item) for item in my_assignments],
+        **document_dict(doc, assignments),
+        "assignments": [assignment_dict(item) for item in assignments],
         "comments": [comment_dict(item) for item in comments],
-        "attachments": [attachment_to_dict(item) for item in attachments],
-        "history_logs": [history_dict(item) for item in logs],
+        "attachments": [attachment_to_dict(item, uploaders.get(item.uploaded_by)) for item in attachments],
         "my_permissions": {
-            "can_view": True,
-            "can_update": can_mutate_document(current_user, doc, assignments),
-            "can_forward": any(can_forward_assignment(current_user, item) for item in actionable_assignments),
-            "can_complete": any(can_complete_assignment(current_user, item) for item in actionable_assignments),
-            "can_void": current_user.role in {"admin", "clerk"} or current_user.id == doc.created_by,
+            "can_update": current_user.role == "manager" and doc.created_by == current_user.id,
+            "can_assign": current_user.role == "manager" and doc.created_by == current_user.id,
+            "can_delete": current_user.role == "manager" and doc.created_by == current_user.id,
         },
     }
 
 
 @router.patch("/{document_id}")
-def update_document(
-    document_id: str,
-    payload: DocumentUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def update_document(document_id: str, payload: DocumentUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
     doc = db.get(Document, document_id)
-    if not doc or doc.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Khong tim thay van ban")
-    assignments = document_assignments(db, doc.id)
-    ensure_can_mutate(current_user, doc, assignments)
-    if doc.status in LOCKED_FOR_MUTATION_STATUSES:
-        raise HTTPException(status_code=400, detail="Van ban da phat hanh/luu tru, khong the sua")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
+    ensure_manager_owner(current_user, doc)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(doc, key, value)
-    history(db, current_user, "document.update", doc.id, doc.title)
+    sync_document_status(db, doc)
     db.commit()
     db.refresh(doc)
-    return document_dict(doc)
+    return document_dict(doc, document_assignments(db, doc.id))
 
 
 @router.post("/{document_id}/assign")
 def assign_document(
     document_id: str,
     payload: AssignmentCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager),
 ):
     doc = db.get(Document, document_id)
-    if not doc or doc.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Khong tim thay van ban")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
+    ensure_manager_owner(current_user, doc)
+    staff = db.scalars(select(User).where(User.id.in_(payload.assignee_ids), User.role == "staff", User.is_active.is_(True))).all()
+    if len(staff) != len(set(payload.assignee_ids)):
+        raise HTTPException(status_code=400, detail="Danh sách nhân viên không hợp lệ")
+    existing = {
+        item.assignee_id
+        for item in db.scalars(select(DocumentAssignment).where(DocumentAssignment.document_id == doc.id)).all()
+    }
+    created = []
+    for assignee in staff:
+        if assignee.id in existing:
+            continue
+        assignment = DocumentAssignment(
+            document_id=doc.id,
+            assigned_by=current_user.id,
+            assignee_id=assignee.id,
+            instruction=payload.instruction,
+            due_at=payload.due_at or doc.due_at,
+            priority=payload.priority,
+            status="pending",
+        )
+        db.add(assignment)
+        db.flush()
+        notify(db, assignee.id, doc.id, "Bạn được giao văn bản", doc.title, assignment.id)
+        created.append(assignment)
+    sync_document_status(db, doc)
+    db.commit()
+    if settings.email_enabled:
+        for assignment in created:
+            assignee = db.get(User, assignment.assignee_id)
+            if not assignee:
+                continue
+            subject, html = email_assignment_created(
+                doc.title,
+                doc.code,
+                payload.instruction,
+                str(assignment.due_at or ""),
+                settings.frontend_url,
+            )
+            background_tasks.add_task(
+                send_and_log_task,
+                log_key=f"assignment_created:{assignment.id}:{assignee.id}",
+                event_type="assignment_created",
+                recipient_email=assignee.email,
+                subject=subject,
+                html=html,
+                document_id=doc.id,
+                assignment_id=assignment.id,
+                recipient_user_id=assignee.id,
+            )
+    return [assignment_dict(item) for item in created]
+
+
+@router.delete("/{document_id}", status_code=204)
+def delete_document(document_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+    doc = db.get(Document, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
+    ensure_manager_owner(current_user, doc)
+    # Collect assigned staff for email notification before deleting
     assignments = document_assignments(db, doc.id)
-    ensure_can_mutate(current_user, doc, assignments)
-    if doc.status in LOCKED_FOR_MUTATION_STATUSES:
-        raise HTTPException(status_code=400, detail="Van ban da phat hanh/luu tru, khong the giao xu ly")
-    if not payload.receiver_user_id and not payload.receiver_department_id:
-        raise HTTPException(status_code=400, detail="Can chon nguoi hoac phong ban nhan")
-    assignment = DocumentAssignment(
-        document_id=doc.id,
-        parent_assignment_id=payload.parent_assignment_id,
-        sender_user_id=current_user.id,
-        sender_department_id=current_user.department_id,
-        receiver_user_id=payload.receiver_user_id,
-        receiver_department_id=payload.receiver_department_id,
-        assignment_role=payload.assignment_role,
-        status="pending",
-        action_type=payload.action_type,
-        instruction=payload.instruction,
-        priority=payload.priority,
-        due_date=payload.due_date,
-        pending_at=now_utc(),
-    )
-    db.add(assignment)
-    if doc.status in {"received", "draft"}:
-        doc.status = "in_progress"
-    db.flush()
-    history(db, current_user, assignment.action_type, doc.id, assignment.instruction, assignment.id)
-    notify_assignment_receivers(db, assignment, doc.title)
+    staff_to_notify = []
+    if settings.email_enabled and assignments:
+        assignee_ids = {a.assignee_id for a in assignments}
+        staff_to_notify = list(db.scalars(select(User).where(User.id.in_(assignee_ids), User.is_active.is_(True))).all())
+    doc_title = doc.title
+    doc_code = doc.code
+    assignment_ids = [item.id for item in assignments]
+    attachments = db.scalars(select(DocumentAttachment).where(DocumentAttachment.document_id == doc.id)).all()
+    for attachment in attachments:
+        try:
+            get_storage_provider(attachment.storage_provider).delete(attachment.storage_key)
+        except Exception:
+            pass
+    email_log_filter = EmailLog.document_id == doc.id
+    if assignment_ids:
+        email_log_filter = or_(email_log_filter, EmailLog.assignment_id.in_(assignment_ids))
+    db.query(EmailLog).filter(email_log_filter).update({EmailLog.document_id: None, EmailLog.assignment_id: None}, synchronize_session=False)
+    db.query(Notification).filter(Notification.document_id == doc.id).delete(synchronize_session=False)
+    db.query(DocumentComment).filter(DocumentComment.document_id == doc.id).delete(synchronize_session=False)
+    db.query(DocumentAttachment).filter(DocumentAttachment.document_id == doc.id).delete(synchronize_session=False)
+    db.query(DocumentAssignment).filter(DocumentAssignment.document_id == doc.id).delete(synchronize_session=False)
+    db.delete(doc)
     db.commit()
-    return assignment_dict(assignment)
-
-
-@router.post("/{document_id}/archive")
-def archive_document(
-    document_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    doc = db.get(Document, document_id)
-    if not doc or doc.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Khong tim thay van ban")
-    assignments = document_assignments(db, doc.id)
-    ensure_can_mutate(current_user, doc, assignments)
-    doc.status = "archived"
-    doc.archived_at = now_utc()
-    history(db, current_user, "archive", doc.id, "Luu ho so / luu tru")
-    db.commit()
-    return document_dict(doc)
-
-
-@router.post("/{document_id}/submit-signature")
-def submit_signature(
-    document_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    return document_dict(transition_document(db, document_id, current_user, "pending_signature", "submit_signature", "Trinh ky"))
-
-
-@router.post("/{document_id}/approve-signature")
-def approve_signature(
-    document_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    return document_dict(transition_document(db, document_id, current_user, "approved", "approve_signature", "Ky duyet"))
-
-
-@router.post("/{document_id}/issue")
-def issue_document(
-    document_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    return document_dict(transition_document(db, document_id, current_user, "issued", "issue", "Phat hanh"))
-
-
-@router.post("/{document_id}/void")
-def void_document(
-    document_id: str,
-    payload: DocumentVoidRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    doc = db.get(Document, document_id)
-    if not doc or doc.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Khong tim thay van ban")
-    if doc.status == "issued":
-        raise HTTPException(status_code=400, detail="Van ban da phat hanh, khong the huy")
-    if current_user.role not in {"admin", "clerk"} and current_user.id != doc.created_by:
-        raise HTTPException(status_code=403, detail="Ban khong co quyen huy van ban")
-    doc.status = "voided"
-    doc.deleted_at = now_utc()
-    doc.deleted_by = current_user.id
-    doc.delete_reason = payload.reason
-    history(db, current_user, "void", doc.id, payload.reason)
-    db.commit()
-    return document_dict(doc)
+    # Send deletion notification emails
+    for staff in staff_to_notify:
+        subject, html = email_document_deleted(doc_title, doc_code, staff.full_name)
+        background_tasks.add_task(
+            send_and_log_task,
+            log_key=f"document_deleted:{doc.id}:{staff.id}",
+            event_type="document_deleted",
+            recipient_email=staff.email,
+            subject=subject,
+            html=html,
+            recipient_user_id=staff.id,
+        )
+    return None
 
 
 @router.post("/{document_id}/comments")
-def add_comment(
-    document_id: str,
-    payload: CommentCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+def add_comment(document_id: str, payload: CommentCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     doc = db.get(Document, document_id)
-    if not doc or doc.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Khong tim thay van ban")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
     assignments = document_assignments(db, doc.id)
     ensure_can_view(current_user, doc, assignments)
     comment = DocumentComment(document_id=doc.id, assignment_id=payload.assignment_id, user_id=current_user.id, content=payload.content)
     db.add(comment)
-    history(db, current_user, "comment", doc.id, payload.content[:200], payload.assignment_id)
     db.commit()
     db.refresh(comment)
     return comment_dict(comment)
 
 
-@router.get("/{document_id}/timeline")
-def timeline(
-    document_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    doc = db.get(Document, document_id)
-    if not doc or doc.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Khong tim thay van ban")
-    assignments = document_assignments(db, doc.id)
-    ensure_can_view(current_user, doc, assignments)
-    logs = db.scalars(select(DocumentHistoryLog).where(DocumentHistoryLog.document_id == doc.id).order_by(DocumentHistoryLog.created_at)).all()
-    return {"history_logs": [history_dict(item) for item in logs], "assignments": [assignment_dict(item) for item in assignments]}
-
-
 @router.post("/{document_id}/attachments")
-async def upload_document_attachment(
+async def upload_attachment(
     document_id: str,
     file: UploadFile = File(...),
+    assignment_id: str | None = Form(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     doc = db.get(Document, document_id)
-    if not doc or doc.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Khong tim thay van ban")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
     assignments = document_assignments(db, doc.id)
-    ensure_can_mutate(current_user, doc, assignments)
-    if doc.status in LOCKED_FOR_MUTATION_STATUSES:
-        raise HTTPException(status_code=400, detail="Van ban da phat hanh/luu tru, khong the upload file")
-    provider = get_storage_provider()
-    storage_key, size = await provider.save(file, f"documents/{doc.id}")
+    ensure_can_view(current_user, doc, assignments)
+    # Manager can only upload original files when document has no assignments yet
+    if current_user.role == "manager" and not assignment_id and assignments:
+        raise HTTPException(status_code=400, detail="Văn bản đã giao việc, không thể thêm file gốc")
+    if assignment_id and not any(item.id == assignment_id for item in assignments):
+        raise HTTPException(status_code=400, detail="Assignment không thuộc văn bản này")
+    storage_key, size = await get_storage_provider().save(file, f"documents/{doc.id}")
     attachment = DocumentAttachment(
         document_id=doc.id,
-        assignment_id=None,
+        assignment_id=assignment_id,
         storage_provider=settings.storage_provider,
         storage_key=storage_key,
         original_name=file.filename or "file",
@@ -574,7 +587,6 @@ async def upload_document_attachment(
         uploaded_by=current_user.id,
     )
     db.add(attachment)
-    history(db, current_user, "file_upload", doc.id, attachment.original_name)
     db.commit()
     db.refresh(attachment)
-    return attachment_to_dict(attachment)
+    return attachment_to_dict(attachment, current_user)

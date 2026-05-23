@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -17,7 +17,7 @@ class UserCreate(BaseModel):
     full_name: str
     email: EmailStr
     password: str = Field(min_length=8)
-    role: str
+    role: str = "staff"
     department_id: str | None = None
     position_label: str | None = None
     is_active: bool = True
@@ -30,7 +30,10 @@ class UserUpdate(BaseModel):
     department_id: str | None = None
     position_label: str | None = None
     is_active: bool | None = None
-    must_change_password: bool | None = None
+
+
+class PasswordResetResponse(BaseModel):
+    temporary_password: str
 
 
 class UserOut(BaseModel):
@@ -49,91 +52,64 @@ class UserOut(BaseModel):
 class DepartmentCreate(BaseModel):
     name: str
     description: str | None = None
-    unit_type: str = "department"
     is_active: bool = True
 
 
 class DepartmentUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
-    unit_type: str | None = None
     is_active: bool | None = None
 
 
+class DepartmentTransferRequest(BaseModel):
+    target_department_id: str
+
+
+class ReminderSettings(BaseModel):
+    staff_reminder_enabled: bool = True
+    staff_reminder_time: str = "08:00"
+    staff_due_soon_days: int = Field(default=3, ge=1, le=30)
+    staff_urgent_enabled: bool = True
+    staff_overdue_enabled: bool = True
+    manager_digest_enabled: bool = True
+    manager_digest_time: str = "16:30"
+    manager_report_mode: str = "weekly"
+    manager_report_time: str = "08:00"
+
+
+class EmailTestRequest(BaseModel):
+    to_email: EmailStr | None = None
+
+
 class DocumentCreate(BaseModel):
-    document_type: str = "incoming"
     title: str
     code: str | None = None
-    arrival_number: str | None = None
-    issuing_agency: str | None = None
-    content: str | None = None
-    document_date: date | None = None
-    received_date: date | None = None
-    issued_date: date | None = None
-    due_date: date | None = None
+    summary: str | None = None
+    issued_at: datetime | None = None
+    due_at: datetime | None = None
     priority: str = "normal"
-    owner_department_id: str | None = None
+    department_id: str | None = None
 
 
 class DocumentUpdate(BaseModel):
     title: str | None = None
     code: str | None = None
-    arrival_number: str | None = None
-    issuing_agency: str | None = None
-    content: str | None = None
-    document_date: date | None = None
-    received_date: date | None = None
-    issued_date: date | None = None
-    due_date: date | None = None
+    summary: str | None = None
+    issued_at: datetime | None = None
+    due_at: datetime | None = None
     priority: str | None = None
-    owner_department_id: str | None = None
-
-
-class AssignmentReceiver(BaseModel):
-    receiver_user_id: str | None = None
-    receiver_department_id: str | None = None
-    assignment_role: str = "primary"
-    due_date: date | None = None
-    priority: str = "normal"
+    department_id: str | None = None
 
 
 class AssignmentCreate(BaseModel):
-    parent_assignment_id: str | None = None
-    receiver_user_id: str | None = None
-    receiver_department_id: str | None = None
-    assignment_role: str = "primary"
-    action_type: str = "forward"
+    assignee_ids: list[str] = Field(min_length=1)
     instruction: str | None = None
-    due_date: date | None = None
+    due_at: datetime | None = None
     priority: str = "normal"
 
 
-class AssignmentForwardRequest(BaseModel):
-    action_type: str = "forward"
-    instruction: str | None = None
-    receivers: list[AssignmentReceiver]
-
-
-class AssignmentCompleteRequest(BaseModel):
+class AssignmentSubmit(BaseModel):
     result_note: str | None = None
-    attachment_ids: list[str] = []
-
-
-class AssignmentReturnRequest(BaseModel):
-    receiver_user_id: str | None = None
-    receiver_department_id: str | None = None
-    instruction: str
-    due_date: date | None = None
-    priority: str = "normal"
-
-
-class StatusChange(BaseModel):
-    status: str
-    note: str | None = None
-
-
-class DocumentVoidRequest(BaseModel):
-    reason: str
 
 
 class CommentCreate(BaseModel):

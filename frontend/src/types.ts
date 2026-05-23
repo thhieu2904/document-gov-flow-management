@@ -1,0 +1,145 @@
+export type Role = "manager" | "staff";
+export type Priority = "normal" | "high" | "urgent";
+export type DocumentStatus = "draft" | "in_progress" | "completed";
+export type DisplayStatus = DocumentStatus | "due_soon" | "overdue" | "completed_late";
+export type AssignmentStatus = "pending" | "in_progress" | "completed" | "overdue";
+export type View = "dashboard" | "assigned" | "all_documents" | "users" | "departments" | "reminders";
+
+export type User = {
+  id: string;
+  full_name: string;
+  email: string;
+  role: Role;
+  department_id: string | null;
+  position_label: string | null;
+  is_active: boolean;
+  must_change_password: boolean;
+};
+
+export type Department = {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  member_count?: number;
+  active_member_count?: number;
+  document_count?: number;
+};
+
+export type Page<T> = { items: T[]; page: number; size: number; total: number };
+
+export type ReminderSettings = {
+  staff_reminder_enabled: boolean | string;
+  staff_reminder_time: string;
+  staff_due_soon_days: number | string;
+  staff_urgent_enabled: boolean | string;
+  staff_overdue_enabled: boolean | string;
+  manager_digest_enabled: boolean | string;
+  manager_digest_time: string;
+  manager_report_mode: "off" | "weekly" | "monthly" | "both" | string;
+  manager_report_time: string;
+  email_enabled?: boolean;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_username?: string;
+  smtp_from_email?: string;
+  smtp_from_name?: string;
+  smtp_use_tls?: boolean;
+  resend_configured?: boolean;
+};
+
+export type EmailLog = {
+  id: string;
+  event_type: string;
+  recipient_email: string;
+  subject: string;
+  status: string;
+  sent_at: string | null;
+  created_at: string;
+  document_id: string | null;
+  assignment_id: string | null;
+};
+
+export type DocumentRow = {
+  id: string;
+  title: string;
+  code: string | null;
+  summary: string | null;
+  priority: Priority;
+  status: DocumentStatus;
+  display_status?: DisplayStatus;
+  issued_at: string | null;
+  due_at: string | null;
+  created_by: string;
+  department_id: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  assignment_count: number;
+  completed_count: number;
+};
+
+export type Assignment = {
+  id: string;
+  document_id: string;
+  assigned_by: string;
+  assignee_id: string;
+  assignee?: Pick<User, "id" | "full_name" | "email" | "role" | "department_id"> | null;
+  instruction: string | null;
+  result_note: string | null;
+  priority: Priority;
+  status: Exclude<AssignmentStatus, "overdue">;
+  due_at: string | null;
+  started_at: string | null;
+  submitted_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+};
+
+export type Attachment = {
+  id: string;
+  document_id: string;
+  assignment_id: string | null;
+  original_name: string;
+  mime_type: string;
+  size: number;
+  uploaded_by: string | null;
+  uploaded_by_name: string | null;
+  created_at: string;
+  download_url: string;
+};
+
+export type DocumentDetail = DocumentRow & {
+  assignments: Assignment[];
+  attachments: Attachment[];
+  my_permissions: { can_update: boolean; can_assign: boolean; can_delete: boolean };
+};
+
+export type DashboardDocument = {
+  id: string;
+  code: string | null;
+  title: string;
+  status: DocumentStatus;
+  display_status: DisplayStatus;
+  priority: Priority;
+  issued_at: string | null;
+  due_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  assignment_count: number;
+  completed_count: number;
+  assignees: Array<{ name: string; status: AssignmentStatus }>;
+};
+
+export type Dashboard = {
+  total_documents: number;
+  open_documents: number;
+  draft_documents: number;
+  in_progress_documents: number;
+  due_soon_documents: number;
+  overdue_documents: number;
+  completed_documents: number;
+  open_tasks: number;
+  overdue_tasks: number;
+  work_items: DashboardDocument[];
+};
