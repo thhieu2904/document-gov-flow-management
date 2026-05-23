@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { BellRing, BriefcaseBusiness, Building2, FileText, KeyRound, LogOut, UsersRound, User as UserIcon } from "lucide-react";
+import { BellRing, BriefcaseBusiness, Building2, CheckCircle, Database, FileText, KeyRound, ListTodo, LogOut, UsersRound, User as UserIcon } from "lucide-react";
 import type { User, View } from "../types";
 import { NavButton } from "./shared";
 import { labels } from "../labels";
@@ -43,7 +43,10 @@ export function Sidebar({ user, view, onChange, onLogout, onOpenProfile }: { use
         ) : (
           <>
             <SidebarGroup label="Công việc" />
-            <NavButton active={view === "assigned"} icon={<FileText size={17} />} onClick={() => onChange("assigned")}>Việc được giao</NavButton>
+            <NavButton active={view === "assigned_pending"} icon={<ListTodo size={17} />} onClick={() => onChange("assigned_pending")}>Việc cần xử lý</NavButton>
+            <NavButton active={view === "assigned_completed"} icon={<CheckCircle size={17} />} onClick={() => onChange("assigned_completed")}>Việc đã hoàn tất</NavButton>
+            <SidebarGroup label="Tra cứu" />
+            <NavButton active={view === "assigned"} icon={<Database size={17} />} onClick={() => onChange("assigned")}>Tất cả việc được giao</NavButton>
           </>
         )}
       </div>

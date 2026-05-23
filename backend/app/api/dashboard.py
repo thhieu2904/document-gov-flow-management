@@ -116,19 +116,29 @@ def dashboard(
     all_docs = db.scalars(select(Document).where(doc_filter).order_by(Document.due_at.asc().nulls_last(), Document.updated_at.desc())).all()
     docs = [doc for doc in all_docs if in_period(doc, start, end)]
     by_doc = document_assignments_map(db, [doc.id for doc in docs])
-    work_items = [doc_item(doc, by_doc.get(doc.id, [])) for doc in docs if doc.status != "completed"]
+    
+    if current_user.role == "manager":
+        work_items = [doc_item(doc, by_doc.get(doc.id, [])) for doc in docs if doc.status != "completed"]
+    else:
+        work_items = []
+        for doc in docs:
+            assignments = by_doc.get(doc.id, [])
+            my_assignment = next((a for a in assignments if a.assignee_id == current_user.id), None)
+            if my_assignment and my_assignment.status != "completed":
+                work_items.append(doc_item(doc, assignments))
     work_items = sort_work_items(work_items, sort_by, sort_dir)
 
     due_soon_count = len([item for item in work_items if item["display_status"] == "due_soon"])
     overdue_count = len([item for item in work_items if item["display_status"] == "overdue"])
     in_progress_count = len([item for item in work_items if item["display_status"] == "in_progress"])
     draft_count = len([item for item in work_items if item["display_status"] == "draft"])
-    completed_count = len([doc for doc in docs if doc.status == "completed"])
     period_assignments = [item for items in by_doc.values() for item in items]
     if current_user.role == "manager":
         period_assignments = [item for item in period_assignments if item.assigned_by == current_user.id]
+        completed_count = len([doc for doc in docs if doc.status == "completed"])
     else:
         period_assignments = [item for item in period_assignments if item.assignee_id == current_user.id]
+        completed_count = len([item for item in period_assignments if item.status == "completed"])
 
     return {
         "total_documents": len(docs),

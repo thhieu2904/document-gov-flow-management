@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, FileText, Plus, Search, X, Download } from "lucide-react";
 import { api, apiDownload } from "../api";
-import type { Department, DisplayStatus, DocumentRow, Page, Priority, User } from "../types";
+import type { AssignmentStatus, Department, DisplayStatus, DocumentRow, Page, Priority, User } from "../types";
 import { fmtDateTimeSecond, fromDateTimeInputValue } from "../utils";
 import { Empty, Loading, PageTitle, Pager, Panel, Priority as PriorityBadge, Status } from "./shared";
 import { ExportModal } from "./ExportModal";
@@ -20,6 +20,18 @@ function displayStatus(doc: DocumentRow): DisplayStatus {
   if (doc.due_at && new Date(doc.due_at).getTime() < Date.now()) return "overdue";
   if (doc.due_at && new Date(doc.due_at).getTime() <= Date.now() + 3 * 86400000) return "due_soon";
   return doc.status;
+}
+
+function rowStatus(doc: DocumentRow): DisplayStatus | AssignmentStatus {
+  return doc.my_assignment_display_status || doc.display_status || displayStatus(doc);
+}
+
+function rowDueAt(doc: DocumentRow) {
+  return doc.my_assignment_due_at || doc.due_at;
+}
+
+function rowProgress(doc: DocumentRow) {
+  return doc.my_assignment_progress || `${doc.completed_count}/${doc.assignment_count}`;
 }
 
 function shortDate(value: Date) {
@@ -46,11 +58,11 @@ function dateParam(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
-export function DocumentsView({ scope, title, mode, currentUser, users, departments, onOpen, onChanged }: { scope: "assigned_by_me" | "my_tasks"; title: string; mode: Period | "period"; currentUser: User; users: User[]; departments: Department[]; onOpen: (id: string) => void; onChanged?: () => Promise<void> }) {
+export function DocumentsView({ scope, title, mode, currentUser, users, departments, onOpen, onChanged, initialStatuses }: { scope: "assigned_by_me" | "my_tasks"; title: string; mode: Period | "period"; currentUser: User; users: User[]; departments: Department[]; onOpen: (id: string) => void; onChanged?: () => Promise<void>; initialStatuses?: StatusFilter[] }) {
   const [page, setPage] = useState<Page<DocumentRow> | null>(null);
   const [search, setSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
-  const [statuses, setStatuses] = useState<StatusFilter[]>([]);
+  const [statuses, setStatuses] = useState<StatusFilter[]>(initialStatuses || []);
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [period, setPeriod] = useState<Period>(mode === "period" ? "week" : "all");
   const [anchorDate, setAnchorDate] = useState(() => new Date());
@@ -139,7 +151,7 @@ export function DocumentsView({ scope, title, mode, currentUser, users, departme
             <span className="mr-2 text-xs font-black uppercase tracking-wider text-slate-400">Trạng thái</span>
             {([
               ["open", "Cần thực hiện"],
-              ["draft", "Chưa giao"],
+              ["draft", scope === "my_tasks" ? "Chưa nhận" : "Chưa giao"],
               ["in_progress", "Đang thực hiện"],
               ["due_soon", "Sắp đến hạn"],
               ["overdue", "Quá hạn"],
@@ -192,9 +204,9 @@ export function DocumentTable({ docs, sortBy, sortDir, onSort, onOpen }: { docs:
               <td className="px-3 py-3 font-bold">{doc.title}<div className="text-xs font-normal text-slate-500">{doc.summary || "-"}</div></td>
               <td className="doc-table-nowrap whitespace-nowrap px-3 py-3 text-slate-500">{fmtDateTimeSecond(doc.created_at)}</td>
               <td className="doc-table-nowrap whitespace-nowrap px-3 py-3">{fmtDateTimeSecond(doc.issued_at)}</td>
-              <td className="doc-table-nowrap whitespace-nowrap px-3 py-3">{fmtDateTimeSecond(doc.due_at)}</td>
-              <td className="doc-table-nowrap whitespace-nowrap px-3 py-3 font-bold">{doc.completed_count}/{doc.assignment_count}</td>
-              <td className="doc-table-nowrap whitespace-nowrap px-3 py-3"><Status status={doc.display_status || displayStatus(doc)} /></td>
+              <td className="doc-table-nowrap whitespace-nowrap px-3 py-3">{fmtDateTimeSecond(rowDueAt(doc))}</td>
+              <td className="doc-table-nowrap whitespace-nowrap px-3 py-3 font-bold">{rowProgress(doc)}</td>
+              <td className="doc-table-nowrap whitespace-nowrap px-3 py-3"><Status status={rowStatus(doc)} /></td>
               <td className="doc-table-nowrap whitespace-nowrap px-3 py-3"><PriorityBadge p={doc.priority} /></td>
             </tr>
           ))}

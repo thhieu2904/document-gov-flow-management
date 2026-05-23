@@ -3,7 +3,7 @@ export type Priority = "normal" | "high" | "urgent";
 export type DocumentStatus = "draft" | "in_progress" | "completed";
 export type DisplayStatus = DocumentStatus | "due_soon" | "overdue" | "completed_late";
 export type AssignmentStatus = "pending" | "in_progress" | "completed" | "overdue";
-export type View = "dashboard" | "assigned" | "all_documents" | "users" | "departments" | "reminders";
+export type View = "dashboard" | "assigned" | "assigned_pending" | "assigned_completed" | "all_documents" | "users" | "departments" | "reminders";
 
 export type User = {
   id: string;
@@ -77,6 +77,12 @@ export type DocumentRow = {
   completed_at: string | null;
   assignment_count: number;
   completed_count: number;
+  my_assignment_id?: string | null;
+  my_assignment_status?: Exclude<AssignmentStatus, "overdue"> | null;
+  my_assignment_display_status?: DisplayStatus | AssignmentStatus | null;
+  my_assignment_due_at?: string | null;
+  my_assignment_completed_at?: string | null;
+  my_assignment_progress?: string | null;
 };
 
 export type Assignment = {

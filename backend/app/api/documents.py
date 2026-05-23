@@ -55,9 +55,30 @@ def assignment_dict(item: DocumentAssignment, assignee: User | None = None) -> d
     }
 
 
-def document_dict(doc: Document, assignments: list[DocumentAssignment] | None = None) -> dict:
+def assignment_display_status(item: DocumentAssignment) -> str:
+    if item.status == "completed":
+        if item.due_at and item.completed_at and item.completed_at > item.due_at:
+            return "completed_late"
+        return "completed"
+    if item.due_at and item.due_at < now_utc():
+        return "overdue"
+    if item.due_at and item.due_at <= now_utc() + timedelta(days=3):
+        return "due_soon"
+    return item.status
+
+
+def assignment_matches_status(item: DocumentAssignment, selected: set[str]) -> bool:
+    display_status = assignment_display_status(item)
+    if "open" in selected and item.status != "completed":
+        return True
+    if "draft" in selected and item.status == "pending":
+        return True
+    return display_status in selected
+
+
+def document_dict(doc: Document, assignments: list[DocumentAssignment] | None = None, my_assignment: DocumentAssignment | None = None) -> dict:
     assignments = assignments or []
-    return {
+    payload = {
         "id": doc.id,
         "title": doc.title,
         "code": doc.code,
@@ -75,6 +96,19 @@ def document_dict(doc: Document, assignments: list[DocumentAssignment] | None = 
         "assignment_count": len(assignments),
         "completed_count": len([item for item in assignments if item.status == "completed"]),
     }
+    if my_assignment:
+        is_completed = my_assignment.status == "completed"
+        payload.update(
+            {
+                "my_assignment_id": my_assignment.id,
+                "my_assignment_status": my_assignment.status,
+                "my_assignment_display_status": assignment_display_status(my_assignment),
+                "my_assignment_due_at": my_assignment.due_at,
+                "my_assignment_completed_at": my_assignment.completed_at,
+                "my_assignment_progress": "1/1" if is_completed else "0/1",
+            }
+        )
+    return payload
 
 
 def comment_dict(item: DocumentComment) -> dict:
@@ -135,21 +169,36 @@ def in_period(doc: Document, start: datetime | None, end: datetime | None) -> bo
     return any(value is not None and start <= value < end for value in values)
 
 
-def sort_documents(docs: list[Document], assignments_by_doc: dict[str, list[DocumentAssignment]], sort_by: str, sort_dir: str) -> list[Document]:
+def sort_documents(
+    docs: list[Document],
+    assignments_by_doc: dict[str, list[DocumentAssignment]],
+    sort_by: str,
+    sort_dir: str,
+    my_assignments_by_doc: dict[str, DocumentAssignment] | None = None,
+) -> list[Document]:
     direction = -1 if sort_dir == "desc" else 1
 
     def progress(doc: Document) -> float:
+        if my_assignments_by_doc and doc.id in my_assignments_by_doc:
+            return 1 if my_assignments_by_doc[doc.id].status == "completed" else 0
         assignments = assignments_by_doc.get(doc.id, [])
         return len([item for item in assignments if item.status == "completed"]) / len(assignments) if assignments else 0
 
     def value(doc: Document):
+        my_assignment = my_assignments_by_doc.get(doc.id) if my_assignments_by_doc else None
         if sort_by == "status":
+            if my_assignment:
+                return assignment_display_status(my_assignment)
             return derived_document_status(doc)
         if sort_by == "progress":
             return progress(doc)
         if sort_by == "priority":
+            if my_assignment:
+                return {"urgent": 3, "high": 2, "normal": 1}.get(my_assignment.priority, 0)
             return {"urgent": 3, "high": 2, "normal": 1}.get(doc.priority, 0)
         if sort_by in {"issued_at", "due_at", "created_at"}:
+            if my_assignment and sort_by == "due_at":
+                return my_assignment.due_at or datetime.min.replace(tzinfo=now_utc().tzinfo)
             return getattr(doc, sort_by) or datetime.min.replace(tzinfo=now_utc().tzinfo)
         if sort_by in {"code", "title"}:
             return (getattr(doc, sort_by) or "").lower()
@@ -199,6 +248,7 @@ def export_documents(
     by_doc: dict[str, list[DocumentAssignment]] = {}
     for item in assignment_rows:
         by_doc.setdefault(item.document_id, []).append(item)
+    my_by_doc = {item.document_id: item for item in assignment_rows if item.assignee_id == current_user.id} if scope == "my_tasks" else {}
     
     if period == "custom":
         start = datetime.combine(start_date, time.min).replace(tzinfo=VN_TZ) if start_date else None
@@ -209,11 +259,17 @@ def export_documents(
     filtered = [doc for doc in all_docs if in_period(doc, start, end)]
     if status:
         selected = set(status)
-        filtered = [doc for doc in filtered if ("open" in selected and doc.status != "completed") or derived_document_status(doc) in selected]
+        if scope == "my_tasks":
+            filtered = [doc for doc in filtered if doc.id in my_by_doc and assignment_matches_status(my_by_doc[doc.id], selected)]
+        else:
+            filtered = [doc for doc in filtered if ("open" in selected and doc.status != "completed") or derived_document_status(doc) in selected]
     if priority:
         selected_priority = set(priority)
-        filtered = [doc for doc in filtered if doc.priority in selected_priority]
-    sorted_docs = sort_documents(filtered, by_doc, sort_by, sort_dir)
+        if scope == "my_tasks":
+            filtered = [doc for doc in filtered if doc.id in my_by_doc and my_by_doc[doc.id].priority in selected_priority]
+        else:
+            filtered = [doc for doc in filtered if doc.priority in selected_priority]
+    sorted_docs = sort_documents(filtered, by_doc, sort_by, sort_dir, my_by_doc if scope == "my_tasks" else None)
 
     from openpyxl.styles import Alignment
     wb = openpyxl.Workbook()
@@ -243,9 +299,14 @@ def export_documents(
     
     # Calculate stats
     total_docs = len(sorted_docs)
-    completed_docs = sum(1 for d in sorted_docs if d.status == "completed" or d.status == "completed_late")
-    in_progress_docs = sum(1 for d in sorted_docs if d.status == "in_progress")
-    overdue_docs = sum(1 for d in sorted_docs if derived_document_status(d) in ["overdue", "completed_late"])
+    if scope == "my_tasks":
+        completed_docs = sum(1 for d in sorted_docs if my_by_doc.get(d.id) and my_by_doc[d.id].status == "completed")
+        in_progress_docs = sum(1 for d in sorted_docs if my_by_doc.get(d.id) and my_by_doc[d.id].status in ["pending", "in_progress"])
+        overdue_docs = sum(1 for d in sorted_docs if my_by_doc.get(d.id) and assignment_display_status(my_by_doc[d.id]) in ["overdue", "completed_late"])
+    else:
+        completed_docs = sum(1 for d in sorted_docs if d.status == "completed")
+        in_progress_docs = sum(1 for d in sorted_docs if d.status == "in_progress")
+        overdue_docs = sum(1 for d in sorted_docs if derived_document_status(d) in ["overdue", "completed_late"])
 
     # Stats
     ws['A4'] = f"Tổng số văn bản: {total_docs}   |   Hoàn tất: {completed_docs}   |   Đang thực hiện: {in_progress_docs}   |   Quá hạn/Trễ: {overdue_docs}"
@@ -294,10 +355,12 @@ def export_documents(
 
     for idx, doc in enumerate(sorted_docs, start=7):
         assignments = by_doc.get(doc.id, [])
+        my_assignment = my_by_doc.get(doc.id)
         completed_count = len([a for a in assignments if a.status == "completed"])
-        progress = f"{completed_count}/{len(assignments)}"
-        display_status = status_map.get(derived_document_status(doc), doc.status)
-        doc_priority = priority_map.get(doc.priority, doc.priority)
+        progress = "1/1" if my_assignment and my_assignment.status == "completed" else "0/1" if my_assignment else f"{completed_count}/{len(assignments)}"
+        display_status_key = assignment_display_status(my_assignment) if my_assignment else derived_document_status(doc)
+        display_status = status_map.get(display_status_key, assign_status_map.get(display_status_key, display_status_key))
+        doc_priority = priority_map.get(my_assignment.priority if my_assignment else doc.priority, my_assignment.priority if my_assignment else doc.priority)
 
         assignees_text = "\n".join([f"- {a.assignee.full_name if a.assignee else '?'} ({assign_status_map.get(a.status, a.status)})" for a in assignments])
 
@@ -370,20 +433,27 @@ def list_documents(
     by_doc: dict[str, list[DocumentAssignment]] = {}
     for item in assignment_rows:
         by_doc.setdefault(item.document_id, []).append(item)
+    my_by_doc = {item.document_id: item for item in assignment_rows if item.assignee_id == current_user.id} if scope == "my_tasks" else {}
     start, end = period_bounds(period, anchor_date)
     filtered = [doc for doc in all_docs if in_period(doc, start, end)]
     if status:
         selected = set(status)
-        filtered = [doc for doc in filtered if ("open" in selected and doc.status != "completed") or derived_document_status(doc) in selected]
+        if scope == "my_tasks":
+            filtered = [doc for doc in filtered if doc.id in my_by_doc and assignment_matches_status(my_by_doc[doc.id], selected)]
+        else:
+            filtered = [doc for doc in filtered if ("open" in selected and doc.status != "completed") or derived_document_status(doc) in selected]
     if priority:
         selected_priority = set(priority)
-        filtered = [doc for doc in filtered if doc.priority in selected_priority]
-    sorted_docs = sort_documents(filtered, by_doc, sort_by, sort_dir)
+        if scope == "my_tasks":
+            filtered = [doc for doc in filtered if doc.id in my_by_doc and my_by_doc[doc.id].priority in selected_priority]
+        else:
+            filtered = [doc for doc in filtered if doc.priority in selected_priority]
+    sorted_docs = sort_documents(filtered, by_doc, sort_by, sort_dir, my_by_doc if scope == "my_tasks" else None)
     safe_page = max(page, 1)
     safe_size = min(max(size, 1), 100)
     start_index = (safe_page - 1) * safe_size
     page_docs = sorted_docs[start_index:start_index + safe_size]
-    return {"items": [document_dict(doc, by_doc.get(doc.id, [])) for doc in page_docs], "page": safe_page, "size": safe_size, "total": len(sorted_docs)}
+    return {"items": [document_dict(doc, by_doc.get(doc.id, []), my_by_doc.get(doc.id)) for doc in page_docs], "page": safe_page, "size": safe_size, "total": len(sorted_docs)}
 
 
 @router.post("")

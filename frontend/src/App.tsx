@@ -71,7 +71,6 @@ export default function App() {
   }
 
   const assignedScope = currentUser.role === "manager" ? "assigned_by_me" : "my_tasks";
-  const assignedTitle = currentUser.role === "manager" ? "Văn bản xử lý chính" : "Việc được giao";
   const logout = () => { localStorage.removeItem("simple_doc_token"); setToken(null); setCurrentUser(null); };
 
   return (
@@ -82,8 +81,10 @@ export default function App() {
         <main className="min-w-0 flex-1 p-5">
           {notice ? <div className="mb-4 flex justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-[#214b74]">{notice}<button onClick={() => setNotice("")}>Đóng</button></div> : null}
           {view === "dashboard" ? <DashboardView user={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} /> : null}
-          {view === "assigned" ? <DocumentsView scope={assignedScope} title={assignedTitle} mode={currentUser.role === "manager" ? "period" : "all"} currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} /> : null}
-          {view === "all_documents" ? <DocumentsView scope="assigned_by_me" title="Tất cả văn bản" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} /> : null}
+          {view === "assigned" ? <DocumentsView key="assigned" scope={assignedScope} title={currentUser.role === "manager" ? "Văn bản xử lý chính" : "Tất cả việc được giao"} mode={currentUser.role === "manager" ? "period" : "all"} currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} /> : null}
+          {view === "assigned_pending" ? <DocumentsView key="assigned_pending" scope="my_tasks" title="Việc cần xử lý" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} initialStatuses={["open"]} /> : null}
+          {view === "assigned_completed" ? <DocumentsView key="assigned_completed" scope="my_tasks" title="Việc đã hoàn tất" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} initialStatuses={["completed", "completed_late"]} /> : null}
+          {view === "all_documents" ? <DocumentsView key="all_documents" scope="assigned_by_me" title="Tất cả văn bản" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} /> : null}
           {view === "users" ? <UsersView users={users} departments={departments} currentUser={currentUser} onChanged={refreshReference} /> : null}
           {view === "departments" ? <DepartmentsView departments={departments} users={users} onChanged={refreshReference} /> : null}
           {view === "reminders" ? <RemindersView /> : null}
