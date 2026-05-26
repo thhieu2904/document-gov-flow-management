@@ -1,0 +1,41 @@
+name: Deploy Backend to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploying to VPS via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            echo "=== Bắt đầu quá trình cập nhật code trên VPS ==="
+            
+            # 1. Di chuyển vào thư mục dự án trên VPS
+            cd /opt/document-gov-flow-management
+
+            # 2. Đồng bộ code mới từ GitHub dưới quyền user dfm (tránh xung đột quyền file)
+            echo "--- Đang pull code mới từ GitHub ---"
+            sudo -u dfm git pull origin main
+
+            # 3. Cập nhật dependencies trong môi trường ảo của Backend dưới quyền user dfm
+            echo "--- Cập nhật dependencies (nếu có) ---"
+            sudo -u dfm /opt/document-gov-flow-management/backend/.venv/bin/pip install --no-cache-dir -r /opt/document-gov-flow-management/backend/requirements.txt
+
+            # 4. Khởi động lại Backend service qua systemd (yêu cầu quyền root)
+            echo "--- Đang khởi động lại Backend ---"
+            systemctl restart document-flow-backend.service
+
+            # 5. Kiểm tra trạng thái hoạt động của Backend
+            echo "--- Kiểm tra trạng thái dịch vụ ---"
+            systemctl status document-flow-backend.service --no-pager -n 5
+            
+            echo "=== Tự động deploy hoàn tất thành công! ==="
