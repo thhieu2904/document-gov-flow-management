@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { BellRing, Mail, Play, RefreshCcw, Users, UserCog } from "lucide-react";
-import { api } from "../api";
+import { api, errorMessage } from "../api";
 import type { EmailLog, ReminderSettings } from "../types";
 import { Empty, Loading, PageTitle, Panel, SystemModal } from "./shared";
 
@@ -61,7 +61,7 @@ export function RemindersView() {
       setSettings(await api<ReminderSettings>("/reminders/settings"));
       setLogs(await api<EmailLog[]>("/reminders/email-logs"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không tải được cấu hình.");
+      setError(errorMessage(err, "Không tải được cấu hình."));
     }
   }
 
@@ -69,39 +69,70 @@ export function RemindersView() {
 
   async function save() {
     if (!settings) return;
-    await api("/reminders/settings", { method: "PUT", body: JSON.stringify({
-      staff_reminder_enabled: asBool(settings.staff_reminder_enabled),
-      staff_reminder_time: settings.staff_reminder_time,
-      staff_due_soon_days: Number(settings.staff_due_soon_days),
-      staff_urgent_enabled: asBool(settings.staff_urgent_enabled),
-      staff_overdue_enabled: asBool(settings.staff_overdue_enabled),
-      manager_digest_enabled: asBool(settings.manager_digest_enabled),
-      manager_digest_time: settings.manager_digest_time,
-      manager_report_mode: settings.manager_report_mode,
-      manager_report_time: settings.manager_report_time,
-    }) });
-    setNotice("Đã lưu cấu hình.");
-    await load();
+    setError("");
+    try {
+      await api("/reminders/settings", { method: "PUT", body: JSON.stringify({
+        staff_reminder_enabled: asBool(settings.staff_reminder_enabled),
+        staff_reminder_time: settings.staff_reminder_time,
+        staff_due_soon_days: Number(settings.staff_due_soon_days),
+        staff_urgent_enabled: asBool(settings.staff_urgent_enabled),
+        staff_overdue_enabled: asBool(settings.staff_overdue_enabled),
+        manager_digest_enabled: asBool(settings.manager_digest_enabled),
+        manager_digest_time: settings.manager_digest_time,
+        manager_report_mode: settings.manager_report_mode,
+        manager_report_time: settings.manager_report_time,
+      }) });
+      setNotice("Đã lưu cấu hình.");
+      await load();
+    } catch (err) {
+      setError(errorMessage(err, "Không lưu được cấu hình."));
+    }
   }
 
   async function action(path: string, label: string) {
-    const result = await api<any>(path, { method: "POST" });
-    setPreview({ label, result });
-    await load();
+    setError("");
+    try {
+      const result = await api<any>(path, { method: "POST" });
+      setPreview({ label, result });
+      await load();
+    } catch (err) {
+      setError(errorMessage(err, `Không thực hiện được: ${label}`));
+    }
   }
 
   async function prepareRun(path: string, label: string, previewPath: string) {
-    const result = await api<any>(previewPath, { method: "POST" });
-    setConfirm({ label, path, preview: result });
+    setError("");
+    try {
+      const result = await api<any>(previewPath, { method: "POST" });
+      setConfirm({ label, path, preview: result });
+    } catch (err) {
+      setError(errorMessage(err, `Không xem trước được: ${label}`));
+    }
   }
 
   async function confirmRun() {
     if (!confirm) return;
-    const result = await api<any>(confirm.path, { method: "POST" });
-    setPreview({ label: confirm.label, result });
-    setConfirm(null);
-    setNotice(`Đã thực hiện: ${confirm.label}.`);
-    await load();
+    setError("");
+    try {
+      const result = await api<any>(confirm.path, { method: "POST" });
+      setPreview({ label: confirm.label, result });
+      setConfirm(null);
+      setNotice(`Đã thực hiện: ${confirm.label}.`);
+      await load();
+    } catch (err) {
+      setError(errorMessage(err, `Không gửi được: ${confirm.label}`));
+    }
+  }
+
+  async function sendTestEmail() {
+    setError("");
+    try {
+      const result = await api<any>("/reminders/email-test", { method: "POST", body: JSON.stringify(testEmail.trim() ? { to_email: testEmail.trim() } : {}) });
+      setPreview({ label: "Gửi email kiểm tra", result });
+      await load();
+    } catch (err) {
+      setError(errorMessage(err, "Không gửi được email kiểm tra."));
+    }
   }
 
   if (!settings) {
@@ -119,6 +150,7 @@ export function RemindersView() {
     <section>
       <PageTitle title="Nhắc hẹn & Báo cáo" desc="Cấu hình nhắc hạn tự động, tổng hợp hàng ngày và báo cáo định kỳ cho quản lý." action={<button className="icon-text-btn" onClick={load}><RefreshCcw size={16} /> Làm mới</button>} />
       {notice ? <div className="mb-4 flex justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-[#214b74]">{notice}<button onClick={() => setNotice("")}>Đóng</button></div> : null}
+      {error ? <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</div> : null}
 
       {/* Row 1: Config + SMTP */}
       <div className="grid grid-cols-[1.2fr_0.8fr] gap-4">
@@ -160,7 +192,7 @@ export function RemindersView() {
           </div>
           <div className="mt-4 flex items-center gap-2">
             <input className="field min-w-0 flex-1" type="email" placeholder="Email nhận test (để trống = email bạn)" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} />
-            <button className="primary-btn shrink-0" onClick={async () => { const result = await api<any>("/reminders/email-test", { method: "POST", body: JSON.stringify(testEmail.trim() ? { to_email: testEmail.trim() } : {}) }); setPreview({ label: "Gửi email kiểm tra", result }); await load(); }}><Mail size={16} /> Gửi thử</button>
+            <button className="primary-btn shrink-0" onClick={sendTestEmail}><Mail size={16} /> Gửi thử</button>
           </div>
           <p className="mt-2 text-xs text-slate-500">Cấu hình SMTP đọc từ file .env trên máy chủ. Thay đổi cần restart backend.</p>
         </Panel>

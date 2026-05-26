@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CheckCircle, Clock, FileText, Paperclip, Send, Trash2, Upload, UsersRound } from "lucide-react";
-import { api, apiDownload } from "../api";
+import { api, apiDownload, errorMessage } from "../api";
 import type { Assignment, AssignmentStatus, Attachment, DisplayStatus, DocumentDetail, User } from "../types";
 import { fmtDateTimeSecond, fmtSize, userName } from "../utils";
 import { Empty, Panel, Status, SystemModal } from "./shared";
@@ -44,13 +44,20 @@ export function DetailModal({ detail, currentUser, users, onClose, onReload }: {
   const originalFiles = detail.attachments.filter((item) => !item.assignment_id);
   const resultFiles = detail.attachments.filter((item) => item.assignment_id != null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState("");
   const isAssigned = detail.assignment_count > 0;
   const canUploadOriginal = detail.my_permissions.can_update && !isAssigned;
   const docStatus = derivedDocStatus(detail);
 
   async function deleteDoc() {
-    await api(`/documents/${detail.id}`, { method: "DELETE" });
-    onClose();
+    setError("");
+    try {
+      await api(`/documents/${detail.id}`, { method: "DELETE" });
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err, "Không xóa được văn bản"));
+      setConfirmDelete(false);
+    }
   }
 
   return (
@@ -81,6 +88,7 @@ export function DetailModal({ detail, currentUser, users, onClose, onReload }: {
 
         {/* Body */}
         <div className="space-y-4 p-6">
+          {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
           {/* Summary if exists */}
           {detail.summary ? <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"><b className="text-slate-600">Ghi chú:</b> {detail.summary}</div> : null}
 
@@ -135,13 +143,15 @@ export function DetailModal({ detail, currentUser, users, onClose, onReload }: {
 }
 
 function AttachmentList({ files, users, emptyText }: { files: Attachment[]; users: User[]; emptyText: string }) {
+  const [error, setError] = useState("");
   if (!files.length) return <Empty text={emptyText} />;
   return (
     <div className="mt-2 space-y-1.5">
+      {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</p> : null}
       {files.map((a) => {
         const uploader = a.uploaded_by_name || userName(users, a.uploaded_by);
         return (
-          <button key={a.id} type="button" onClick={() => void apiDownload(a.download_url, a.original_name)} className="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm hover:bg-blue-50">
+          <button key={a.id} type="button" onClick={async () => { setError(""); try { await apiDownload(a.download_url, a.original_name); } catch (err) { setError(errorMessage(err, "Không tải được file")); } }} className="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm hover:bg-blue-50">
             <span className="min-w-0">
               <b className="block truncate text-[#214b74]">{a.original_name}</b>
               <span className="text-[11px] text-slate-500">{fmtSize(a.size)} · {uploader}</span>
@@ -156,20 +166,32 @@ function AttachmentList({ files, users, emptyText }: { files: Attachment[]; user
 
 function StaffActions({ assignment, detail, onReload }: { assignment: Assignment; detail: DocumentDetail; onReload: () => Promise<void> }) {
   const [note, setNote] = useState(assignment.result_note || "");
+  const [error, setError] = useState("");
   const canSendResult = assignment.status !== "completed";
 
   async function start() {
-    await api(`/assignments/${assignment.id}/start`, { method: "POST" });
-    await onReload();
+    setError("");
+    try {
+      await api(`/assignments/${assignment.id}/start`, { method: "POST" });
+      await onReload();
+    } catch (err) {
+      setError(errorMessage(err, "Không bắt đầu được việc"));
+    }
   }
 
   async function submit() {
-    await api(`/assignments/${assignment.id}/submit`, { method: "POST", body: JSON.stringify({ result_note: note }) });
-    await onReload();
+    setError("");
+    try {
+      await api(`/assignments/${assignment.id}/submit`, { method: "POST", body: JSON.stringify({ result_note: note }) });
+      await onReload();
+    } catch (err) {
+      setError(errorMessage(err, "Không gửi lại được kết quả"));
+    }
   }
 
   return (
     <Panel title="Thao tác của tôi" icon={<Send size={16} />}>
+      {error ? <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
       {assignment.status === "pending" ? <button className="primary-btn" onClick={start}>Bắt đầu làm</button> : null}
       {canSendResult ? (
         <>
@@ -184,21 +206,30 @@ function StaffActions({ assignment, detail, onReload }: { assignment: Assignment
 
 function UploadBox({ documentId, assignmentId, onDone }: { documentId: string; assignmentId?: string; onDone: () => Promise<void> }) {
   const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState("");
 
   async function upload() {
     if (!file) return;
-    const form = new FormData();
-    form.set("file", file);
-    if (assignmentId) form.set("assignment_id", assignmentId);
-    await api(`/documents/${documentId}/attachments`, { method: "POST", body: form });
-    setFile(null);
-    await onDone();
+    setError("");
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      if (assignmentId) form.set("assignment_id", assignmentId);
+      await api(`/documents/${documentId}/attachments`, { method: "POST", body: form });
+      setFile(null);
+      await onDone();
+    } catch (err) {
+      setError(errorMessage(err, "Không upload được file"));
+    }
   }
 
   return (
-    <div className="flex gap-2">
-      <input className="field flex-1" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-      <button className="icon-text-btn" onClick={upload}><Upload size={14} /> Upload</button>
-    </div>
+    <>
+      {error ? <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</p> : null}
+      <div className="flex gap-2">
+        <input className="field flex-1" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <button className="icon-text-btn" onClick={upload}><Upload size={14} /> Upload</button>
+      </div>
+    </>
   );
 }

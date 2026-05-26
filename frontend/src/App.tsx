@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { api } from "./api";
+import { api, errorMessage } from "./api";
 import { DashboardView } from "./components/Dashboard";
 import { DepartmentsView } from "./components/Departments";
 import { DetailModal } from "./components/DetailModal";
@@ -54,7 +54,7 @@ export default function App() {
       setDetail(null);
       return;
     }
-    api<DocumentDetail>(`/documents/${detailId}`).then(setDetail).catch((err) => setNotice(err.message));
+    api<DocumentDetail>(`/documents/${detailId}`).then(setDetail).catch((err) => setNotice(errorMessage(err, "Không tải được chi tiết văn bản")));
   }, [detailId]);
 
   async function refreshReference() {
@@ -114,7 +114,7 @@ function ChangePasswordModal({ forced, onClose, onDone }: { forced: boolean; onC
       const result = await api<{ access_token: string; user: User }>("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
       onDone(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không đổi được mật khẩu");
+      setError(errorMessage(err, "Không đổi được mật khẩu"));
     }
   }
   const passwordType = showPassword ? "text" : "password";

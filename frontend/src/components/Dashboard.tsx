@@ -1,6 +1,6 @@
 import { AlertTriangle, BriefcaseBusiness, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, FileText, Inbox, ListChecks, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, errorMessage } from "../api";
 import { labels } from "../labels";
 import type { Dashboard, DashboardDocument, Department, User } from "../types";
 import { fmtDateTimeSecond } from "../utils";
@@ -114,11 +114,17 @@ export function DashboardView({ user, users, departments, onOpen, onChanged }: {
   const [creating, setCreating] = useState(false);
   const [sortBy, setSortBy] = useState<SortKey>("due_at");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [error, setError] = useState("");
 
   async function load() {
-    const params = new URLSearchParams({ period, sort_by: sortBy, sort_dir: sortDir });
-    params.set("anchor_date", dateParam(anchorDate));
-    setData(await api<Dashboard>(`/dashboard?${params.toString()}`));
+    setError("");
+    try {
+      const params = new URLSearchParams({ period, sort_by: sortBy, sort_dir: sortDir });
+      params.set("anchor_date", dateParam(anchorDate));
+      setData(await api<Dashboard>(`/dashboard?${params.toString()}`));
+    } catch (err) {
+      setError(errorMessage(err, "Không tải được tổng quan"));
+    }
   }
 
   useEffect(() => {
@@ -140,7 +146,14 @@ export function DashboardView({ user, users, departments, onOpen, onChanged }: {
     setAnchorDate(next);
   }
 
-  if (!data) return <Loading />;
+  if (!data) {
+    return (
+      <section>
+        <PageTitle title="Tổng quan" desc="Theo dõi văn bản, hạn xử lý và kết quả hoàn thành." action={<Refresh onClick={load} />} />
+        {error ? <div className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</div> : <Loading />}
+      </section>
+    );
+  }
   const stats = user.role === "manager"
     ? [
         { label: "Tổng văn bản", value: data.total_documents, icon: <FileText size={20} /> },
@@ -166,6 +179,7 @@ export function DashboardView({ user, users, departments, onOpen, onChanged }: {
         desc={user.role === "manager" ? "Theo dõi toàn bộ văn bản đang cần thực hiện, hạn xử lý và kết quả hoàn thành." : "Theo dõi các văn bản được giao và hạn xử lý của bạn."}
         action={user.role === "manager" ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> Thêm văn bản</button> : undefined}
       />
+      {error ? <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</div> : null}
       <div className="mb-5 rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">

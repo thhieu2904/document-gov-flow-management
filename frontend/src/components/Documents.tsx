@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, FileText, Plus, Search, X, Download } from "lucide-react";
-import { api, apiDownload } from "../api";
+import { api, errorMessage } from "../api";
 import type { AssignmentStatus, Department, DisplayStatus, DocumentRow, Page, Priority, User } from "../types";
 import { fmtDateTimeSecond, fromDateTimeInputValue } from "../utils";
 import { Empty, Loading, PageTitle, Pager, Panel, Priority as PriorityBadge, Status } from "./shared";
@@ -71,15 +71,21 @@ export function DocumentsView({ scope, title, mode, currentUser, users, departme
   const [pageNo, setPageNo] = useState(1);
   const [creating, setCreating] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [error, setError] = useState("");
 
   async function load() {
-    const params = new URLSearchParams({ scope, size: "20", page: String(pageNo), sort_by: sortBy, sort_dir: sortDir });
-    if (submittedSearch) params.set("search", submittedSearch);
-    params.set("period", mode === "period" ? period : "all");
-    if (mode === "period") params.set("anchor_date", dateParam(anchorDate));
-    statuses.forEach((item) => params.append("status", item));
-    priorities.forEach((item) => params.append("priority", item));
-    setPage(await api<Page<DocumentRow>>(`/documents?${params.toString()}`));
+    setError("");
+    try {
+      const params = new URLSearchParams({ scope, size: "20", page: String(pageNo), sort_by: sortBy, sort_dir: sortDir });
+      if (submittedSearch) params.set("search", submittedSearch);
+      params.set("period", mode === "period" ? period : "all");
+      if (mode === "period") params.set("anchor_date", dateParam(anchorDate));
+      statuses.forEach((item) => params.append("status", item));
+      priorities.forEach((item) => params.append("priority", item));
+      setPage(await api<Page<DocumentRow>>(`/documents?${params.toString()}`));
+    } catch (err) {
+      setError(errorMessage(err, "Không tải được danh sách văn bản"));
+    }
   }
 
   useEffect(() => {
@@ -122,6 +128,7 @@ export function DocumentsView({ scope, title, mode, currentUser, users, departme
           {currentUser.role === "manager" && scope === "assigned_by_me" ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> Tạo văn bản</button> : null}
         </div>
       } />
+      {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
       {/* Bộ lọc thống nhất */}
       <div className="mb-4 rounded-xl border border-slate-200 bg-white shadow-sm">
         {/* Dòng 1: Tìm kiếm & Thời gian */}
@@ -253,7 +260,7 @@ export function DocumentModal({ users, departments, onClose, onDone }: { users: 
       if (assignees.length) await api(`/documents/${doc.id}/assign`, { method: "POST", body: JSON.stringify({ assignee_ids: assignees, instruction, due_at: fromDateTimeInputValue(dueAt), priority }) });
       await onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không tạo được văn bản");
+      setError(errorMessage(err, "Không tạo được văn bản"));
     }
   }
 

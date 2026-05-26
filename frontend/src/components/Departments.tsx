@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowRightLeft, Building2, Pencil, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
-import { api } from "../api";
+import { api, errorMessage } from "../api";
 import type { Department, User } from "../types";
 import { Empty, PageTitle, Panel, SystemModal } from "./shared";
 
@@ -29,13 +29,17 @@ export function DepartmentsView({ departments, users, onChanged }: { departments
       await api(`/departments/${department.id}`, { method: "DELETE" });
       await onChanged();
     } catch (err) {
-      setAlert(err instanceof Error ? err.message : "Không xóa được phòng ban");
+      setAlert(errorMessage(err, "Không xóa được phòng ban"));
     }
   }
 
   async function restore(department: Department) {
-    await api(`/departments/${department.id}/restore`, { method: "POST" });
-    await onChanged();
+    try {
+      await api(`/departments/${department.id}/restore`, { method: "POST" });
+      await onChanged();
+    } catch (err) {
+      setAlert(errorMessage(err, "Không khôi phục được phòng ban"));
+    }
   }
 
   return (
@@ -96,7 +100,7 @@ function DepartmentModal({ state, onClose, onDone }: { state: DepartmentModalSta
       else await api<Department>(`/departments/${state.department.id}`, { method: "PATCH", body: JSON.stringify(payload) });
       await onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không lưu được phòng ban");
+      setError(errorMessage(err, "Không lưu được phòng ban"));
     }
   }
 
@@ -123,7 +127,7 @@ function TransferModal({ department, users, departments, onClose, onDone }: { de
       await api(`/departments/${department.id}/transfer-users`, { method: "POST", body: JSON.stringify({ target_department_id: targetId }) });
       await onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không chuyển được nhân viên");
+      setError(errorMessage(err, "Không chuyển được nhân viên"));
     }
   }
   return (

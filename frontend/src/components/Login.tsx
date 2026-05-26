@@ -1,7 +1,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { Loader2 } from "lucide-react";
-import { api } from "../api";
+import { api, errorMessage } from "../api";
 
 export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
   const [email, setEmail] = useState("manager@example.com");
@@ -23,7 +23,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
       const result = await api<{ access_token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
       onLoggedIn(result.access_token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không đăng nhập được");
+      setError(errorMessage(err, "Không đăng nhập được"));
     } finally {
       setLoading(false);
     }

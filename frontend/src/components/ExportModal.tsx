@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Download, X } from "lucide-react";
-import { apiDownload } from "../api";
+import { apiDownload, errorMessage } from "../api";
 import { Panel } from "./shared";
 
 type Period = "week" | "month" | "custom" | "all";
@@ -69,7 +69,7 @@ export function ExportModal({
       await apiDownload(`/documents/export?${params.toString()}`, "Danh_sach_van_ban.xlsx");
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể xuất báo cáo Excel.");
+      setError(errorMessage(err, "Không thể xuất báo cáo Excel."));
     } finally {
       setExporting(false);
     }

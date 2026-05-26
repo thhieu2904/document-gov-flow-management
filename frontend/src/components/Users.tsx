@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Eye, EyeOff, KeyRound, Lock, Pencil, Plus, Search, Unlock, UsersRound } from "lucide-react";
-import { api } from "../api";
+import { api, errorMessage } from "../api";
 import { labels } from "../labels";
 import type { Department, Role, User } from "../types";
 import { Empty, PageTitle, Panel, SystemModal } from "./shared";
@@ -19,7 +19,18 @@ export function UsersView({ users, departments, currentUser, onChanged }: { user
   const [role, setRole] = useState<"all" | Role>("all");
   const [department, setDepartment] = useState("all");
   const [status, setStatus] = useState<"all" | "active" | "locked">("all");
+  const [error, setError] = useState("");
   const activeDepartments = departments.filter((item) => item.is_active);
+
+  async function setUserActive(user: User, isActive: boolean) {
+    setError("");
+    try {
+      await api(`/users/${user.id}`, { method: "PATCH", body: JSON.stringify({ is_active: isActive }) });
+      await onChanged();
+    } catch (err) {
+      setError(errorMessage(err, isActive ? "Không mở khóa được người dùng" : "Không khóa được người dùng"));
+    }
+  }
 
   const filtered = useMemo(() => users.filter((u) => {
     const text = `${u.full_name} ${u.email}`.toLowerCase();
@@ -34,6 +45,7 @@ export function UsersView({ users, departments, currentUser, onChanged }: { user
   return (
     <section>
       <PageTitle title="Người dùng" desc="Quản lý tài khoản nhân viên, trạng thái và mật khẩu tạm." action={<button className="primary-btn" onClick={() => setModal({ mode: "create" })}><Plus size={16} /> Thêm người dùng</button>} />
+      {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
       <div className="mb-4 rounded-lg border bg-white p-3">
         <div className="mb-2 flex gap-2">
           <input className="field flex-1" placeholder="Tìm họ tên hoặc email..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -62,8 +74,8 @@ export function UsersView({ users, departments, currentUser, onChanged }: { user
                       <button className="icon-text-btn" onClick={() => setModal({ mode: "edit", user: u })}><Pencil size={15} /> Sửa</button>
                       {u.id !== currentUser.id ? (
                         u.is_active
-                          ? <button className="icon-text-btn text-amber-700" onClick={async () => { await api(`/users/${u.id}`, { method: "PATCH", body: JSON.stringify({ is_active: false }) }); await onChanged(); }}><Lock size={15} /> Khóa</button>
-                          : <button className="icon-text-btn text-emerald-700" onClick={async () => { await api(`/users/${u.id}`, { method: "PATCH", body: JSON.stringify({ is_active: true }) }); await onChanged(); }}><Unlock size={15} /> Mở khóa</button>
+                          ? <button className="icon-text-btn text-amber-700" onClick={() => setUserActive(u, false)}><Lock size={15} /> Khóa</button>
+                          : <button className="icon-text-btn text-emerald-700" onClick={() => setUserActive(u, true)}><Unlock size={15} /> Mở khóa</button>
                       ) : null}
                       <button className="icon-text-btn" onClick={() => setResetUser(u)}><KeyRound size={15} /> Reset</button>
                     </div>
@@ -132,7 +144,7 @@ function UserModal({ state, currentUser, departments, onClose, onDone }: { state
       }
       await onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không lưu được người dùng");
+      setError(errorMessage(err, "Không lưu được người dùng"));
     }
   }
 
@@ -182,7 +194,7 @@ function ResetPasswordModal({ user, onClose }: { user: User; onClose: () => void
       const result = await api<{ temporary_password: string }>(`/users/${user.id}/reset-password`, { method: "POST" });
       setTemporaryPassword(result.temporary_password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không reset được mật khẩu");
+      setError(errorMessage(err, "Không reset được mật khẩu"));
     }
   }
   return (
