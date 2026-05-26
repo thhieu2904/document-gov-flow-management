@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { api } from "./api";
 import { DashboardView } from "./components/Dashboard";
 import { DepartmentsView } from "./components/Departments";
@@ -92,15 +93,16 @@ export default function App() {
       </div>
       {detail ? <DetailModal detail={detail} currentUser={currentUser} users={users} onClose={() => setDetailId(null)} onReload={reloadDetail} /> : null}
       {profileModal ? <ProfileModal user={currentUser} onClose={() => setProfileModal(false)} onChangePassword={() => { setProfileModal(false); setPasswordModal(true); }} /> : null}
-      {(passwordModal || currentUser.must_change_password) ? <ChangePasswordModal forced={currentUser.must_change_password} onClose={() => { if (!currentUser.must_change_password) setPasswordModal(false); }} onDone={async () => { setPasswordModal(false); const me = await api<User>("/auth/me"); setCurrentUser(me); setNotice("Đổi mật khẩu thành công!"); }} /> : null}
+      {(passwordModal || currentUser.must_change_password) ? <ChangePasswordModal forced={currentUser.must_change_password} onClose={() => { if (!currentUser.must_change_password) setPasswordModal(false); }} onDone={(result) => { localStorage.setItem("simple_doc_token", result.access_token); setToken(result.access_token); setPasswordModal(false); setCurrentUser(result.user); setNotice("Đổi mật khẩu thành công!"); }} /> : null}
     </div>
   );
 }
 
-function ChangePasswordModal({ forced, onClose, onDone }: { forced: boolean; onClose: () => void; onDone: () => Promise<void> }) {
+function ChangePasswordModal({ forced, onClose, onDone }: { forced: boolean; onClose: () => void; onDone: (result: { access_token: string; user: User }) => void }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   async function submit() {
     setError("");
@@ -109,19 +111,25 @@ function ChangePasswordModal({ forced, onClose, onDone }: { forced: boolean; onC
       return;
     }
     try {
-      await api("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
-      await onDone();
+      const result = await api<{ access_token: string; user: User }>("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
+      onDone(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không đổi được mật khẩu");
     }
   }
+  const passwordType = showPassword ? "text" : "password";
   return (
     <SystemModal title={forced ? "Đổi mật khẩu lần đầu" : "Đổi mật khẩu"} onClose={onClose} action={<><button className="icon-text-btn" disabled={forced} onClick={onClose}>Hủy</button><button className="primary-btn" onClick={submit}>Đổi mật khẩu</button></>}>
       {forced ? <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 font-bold text-amber-700">Bạn đang dùng mật khẩu tạm. Vui lòng đổi mật khẩu trước khi tiếp tục.</p> : null}
       {error ? <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 font-bold text-red-700">{error}</p> : null}
-      <label className="mb-3 block text-sm font-bold">Mật khẩu hiện tại<input className="field mt-1 w-full" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></label>
-      <label className="mb-3 block text-sm font-bold">Mật khẩu mới<input className="field mt-1 w-full" type="password" minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /></label>
-      <label className="block text-sm font-bold">Xác nhận mật khẩu mới<input className="field mt-1 w-full" type="password" minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></label>
+      <div className="mb-3 flex justify-end">
+        <button type="button" className="inline-flex items-center gap-1 text-xs font-bold text-[#214b74]" onClick={() => setShowPassword((value) => !value)}>
+          {showPassword ? <EyeOff size={14} /> : <Eye size={14} />} {showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+        </button>
+      </div>
+      <label className="mb-3 block text-sm font-bold">Mật khẩu hiện tại<input className="field mt-1 w-full" type={passwordType} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></label>
+      <label className="mb-3 block text-sm font-bold">Mật khẩu mới<input className="field mt-1 w-full" type={passwordType} minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /></label>
+      <label className="block text-sm font-bold">Xác nhận mật khẩu mới<input className="field mt-1 w-full" type={passwordType} minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></label>
     </SystemModal>
   );
 }

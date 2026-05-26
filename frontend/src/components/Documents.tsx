@@ -161,7 +161,7 @@ export function DocumentsView({ scope, title, mode, currentUser, users, departme
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="mr-2 w-[72px] text-xs font-black uppercase tracking-wider text-slate-400">Ưu tiên</span>
-            {(["normal", "high", "urgent"] as Priority[]).map((value) => <button key={value} type="button" className={priorities.includes(value) ? "rounded-full bg-[#214b74] px-3 py-1 text-xs font-bold text-white shadow-sm" : "rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200"} onClick={() => togglePriority(value)}>{value === "normal" ? "Thường" : value === "high" ? "Khẩn" : "Gấp"}</button>)}
+            {(["normal", "high", "urgent"] as Priority[]).map((value) => <button key={value} type="button" className={priorities.includes(value) ? "rounded-full bg-[#214b74] px-3 py-1 text-xs font-bold text-white shadow-sm" : "rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200"} onClick={() => togglePriority(value)}>{value === "normal" ? "Thường" : value === "high" ? "Khẩn" : "Hỏa tốc"}</button>)}
           </div>
         </div>
       </div>
@@ -268,7 +268,7 @@ export function DocumentModal({ users, departments, onClose, onDone }: { users: 
           <label className="col-span-2 text-sm font-bold">Trích yếu *<textarea className="field mt-1 min-h-20 w-full" value={title} onChange={(e) => setTitle(e.target.value)} required /></label>
           <label className="text-sm font-bold">Ngày ban hành<input className="field mt-1 w-full" type="datetime-local" step={1} value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} /></label>
           <label className="text-sm font-bold">Hạn hoàn thành *<input className="field mt-1 w-full" type="datetime-local" step={1} value={dueAt} onChange={(e) => setDueAt(e.target.value)} required /></label>
-          <label className="text-sm font-bold">Độ ưu tiên<select className="field mt-1 w-full" value={priority} onChange={(e) => setPriority(e.target.value as Priority)}><option value="normal">Thường</option><option value="high">Khẩn</option><option value="urgent">Gấp</option></select></label>
+          <label className="text-sm font-bold">Độ ưu tiên<select className="field mt-1 w-full" value={priority} onChange={(e) => setPriority(e.target.value as Priority)}><option value="normal">Thường</option><option value="high">Khẩn</option><option value="urgent">Hỏa tốc</option></select></label>
           <label className="text-sm font-bold">File văn bản gốc<input className="field mt-1 w-full" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
           <label className="col-span-2 text-sm font-bold">Nội dung giao việc<textarea className="field mt-1 min-h-20 w-full" value={instruction} onChange={(e) => setInstruction(e.target.value)} /></label>
           <label className="col-span-2 text-sm font-bold">Ghi chú/mô tả nội bộ<textarea className="field mt-1 min-h-16 w-full" value={summary} onChange={(e) => setSummary(e.target.value)} /></label>

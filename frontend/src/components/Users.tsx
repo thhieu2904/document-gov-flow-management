@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { KeyRound, Lock, Pencil, Plus, Search, Unlock, UsersRound } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Lock, Pencil, Plus, Search, Unlock, UsersRound } from "lucide-react";
 import { api } from "../api";
 import { labels } from "../labels";
 import type { Department, Role, User } from "../types";
@@ -91,6 +91,7 @@ function UserModal({ state, currentUser, departments, onClose, onDone }: { state
   const [departmentId, setDepartmentId] = useState(user?.role === "staff" ? user.department_id || "" : "");
   const [positionLabel, setPositionLabel] = useState(user?.position_label || "");
   const [isActive, setIsActive] = useState(user?.is_active ?? true);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [managerWarning, setManagerWarning] = useState(false);
 
@@ -147,7 +148,17 @@ function UserModal({ state, currentUser, departments, onClose, onDone }: { state
         <div className="grid grid-cols-2 gap-3">
           <label className="col-span-2 text-sm font-bold">Họ tên *<input className="field mt-1 w-full" value={fullName} onChange={(e) => setFullName(e.target.value)} required /></label>
           <label className="col-span-2 text-sm font-bold">Email *<input className="field mt-1 w-full" value={email} onChange={(e) => setEmail(e.target.value)} disabled={editing} required /></label>
-          {!editing ? <label className="col-span-2 text-sm font-bold">Mật khẩu tạm *<input className="field mt-1 w-full" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} /></label> : null}
+          {!editing ? (
+            <label className="col-span-2 text-sm font-bold">
+              Mật khẩu tạm *
+              <div className="mt-1 flex gap-2">
+                <input className="field min-w-0 flex-1" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
+                <button type="button" className="icon-text-btn shrink-0" onClick={() => setShowPassword((value) => !value)}>
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />} {showPassword ? "Ẩn" : "Hiện"}
+                </button>
+              </div>
+            </label>
+          ) : null}
           {role === "staff" ? <label className="text-sm font-bold">Phòng ban *<select className="field mt-1 w-full" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} required><option value="">Chọn phòng ban</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label> : <div className="rounded-lg bg-blue-50 p-3 text-sm font-bold text-[#214b74]">Quản lý có quyền toàn hệ thống, không gắn phòng ban.</div>}
           <label className="text-sm font-bold">Chức vụ<input className="field mt-1 w-full" value={positionLabel} onChange={(e) => setPositionLabel(e.target.value)} /></label>
           {editing ? <label className="col-span-2 flex items-center gap-2 rounded-lg border p-3 text-sm font-bold"><input type="checkbox" disabled={user?.id === currentUser.id} checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Trạng thái: {isActive ? "Đang hoạt động" : "Tạm khóa"}</label> : null}

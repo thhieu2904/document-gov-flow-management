@@ -337,7 +337,7 @@ def export_documents(
         "draft": "Chưa giao", "in_progress": "Đang thực hiện", "completed": "Hoàn tất",
         "completed_late": "Hoàn tất trễ hạn", "due_soon": "Sắp đến hạn", "overdue": "Quá hạn",
     }
-    priority_map = {"normal": "Thường", "high": "Khẩn", "urgent": "Gấp"}
+    priority_map = {"normal": "Thường", "high": "Khẩn", "urgent": "Hỏa tốc"}
     assign_status_map = {"pending": "Chờ xử lý", "in_progress": "Đang làm", "completed": "Xong", "overdue": "Trễ"}
 
     status_color_map = {
@@ -350,7 +350,7 @@ def export_documents(
     }
     priority_color_map = {
         "Khẩn": "D97706",
-        "Gấp": "DC2626",
+        "Hỏa tốc": "DC2626",
     }
 
     for idx, doc in enumerate(sorted_docs, start=7):

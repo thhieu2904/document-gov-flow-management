@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { CheckCircle, Clock, FileText, Paperclip, Send, Trash2, Upload, UsersRound } from "lucide-react";
 import { api, apiDownload } from "../api";
-import type { Assignment, Attachment, DocumentDetail, User } from "../types";
+import type { Assignment, AssignmentStatus, Attachment, DisplayStatus, DocumentDetail, User } from "../types";
 import { fmtDateTimeSecond, fmtSize, userName } from "../utils";
 import { Empty, Panel, Status, SystemModal } from "./shared";
 
-function assignmentDisplayStatus(assignment: Assignment) {
+function assignmentDisplayStatus(assignment: Assignment): DisplayStatus | AssignmentStatus {
   if (assignment.status === "completed" && assignment.due_at && assignment.completed_at && new Date(assignment.completed_at).getTime() > new Date(assignment.due_at).getTime()) {
     return "completed_late";
+  }
+  if (assignment.status !== "completed" && assignment.due_at && new Date(assignment.due_at).getTime() < Date.now()) {
+    return "overdue";
   }
   return assignment.status;
 }
@@ -153,6 +156,7 @@ function AttachmentList({ files, users, emptyText }: { files: Attachment[]; user
 
 function StaffActions({ assignment, detail, onReload }: { assignment: Assignment; detail: DocumentDetail; onReload: () => Promise<void> }) {
   const [note, setNote] = useState(assignment.result_note || "");
+  const canSendResult = assignment.status !== "completed";
 
   async function start() {
     await api(`/assignments/${assignment.id}/start`, { method: "POST" });
@@ -167,7 +171,7 @@ function StaffActions({ assignment, detail, onReload }: { assignment: Assignment
   return (
     <Panel title="Thao tác của tôi" icon={<Send size={16} />}>
       {assignment.status === "pending" ? <button className="primary-btn" onClick={start}>Bắt đầu làm</button> : null}
-      {assignment.status === "in_progress" ? (
+      {canSendResult ? (
         <>
           <UploadBox documentId={detail.id} assignmentId={assignment.id} onDone={onReload} />
           <textarea className="field mt-3 min-h-24 w-full" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi kết quả xử lý..." />

@@ -2,7 +2,7 @@ import type { AssignmentStatus, DisplayStatus, DocumentStatus, Priority, Role } 
 
 export const labels = {
   role: { manager: "Quản lý", staff: "Nhân viên" } as Record<Role, string>,
-  priority: { normal: "Thường", high: "Khẩn", urgent: "Gấp" } as Record<Priority, string>,
+  priority: { normal: "Thường", high: "Khẩn", urgent: "Hỏa tốc" } as Record<Priority, string>,
   docStatus: {
     draft: "Chưa giao",
     in_progress: "Đang thực hiện",

@@ -51,7 +51,7 @@ def configure_scheduler(app) -> None:
     scheduler = getattr(app.state, "scheduler", None)
     if scheduler:
         scheduler.shutdown(wait=False)
-    scheduler = AsyncIOScheduler(timezone="Asia/Saigon")
+    scheduler = AsyncIOScheduler(timezone="Asia/Ho_Chi_Minh")
     session_factory = get_session_local()
     with session_factory() as db:
         values = get_setting_map(db)

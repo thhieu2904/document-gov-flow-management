@@ -41,7 +41,15 @@ def change_password(
     provider.update_password(db, current_user, payload.new_password)
     current_user.must_change_password = False
     db.commit()
-    return {"ok": True}
+    db.refresh(current_user)
+    result = provider.login(db, current_user.email, payload.new_password)
+    return {
+        "ok": True,
+        "access_token": result.access_token,
+        "refresh_token": result.refresh_token,
+        "token_type": "bearer",
+        "user": UserOut.model_validate(current_user),
+    }
 
 
 @router.get("/me", response_model=UserOut)

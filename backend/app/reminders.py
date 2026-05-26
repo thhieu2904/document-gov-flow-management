@@ -12,7 +12,7 @@ from app.core.email import email_staff_reminder, build_email_html, link_button
 from app.email_utils import log_exists, send_and_log
 from app.models import Document, DocumentAssignment, EmailLog, SystemSetting, User, now_utc
 
-VN_TZ = ZoneInfo("Asia/Saigon")
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 DEFAULT_REMINDER_SETTINGS: dict[str, str] = {
     "staff_reminder_enabled": "true",

@@ -20,7 +20,7 @@ ASSIGNMENT_STATUSES = {
 PRIORITY_LABELS = {
     "normal": "Thường",
     "high": "Khẩn",
-    "urgent": "Gấp",
+    "urgent": "Hỏa tốc",
 }
 
 ALLOWED_UPLOAD_EXTENSIONS = {
