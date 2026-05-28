@@ -66,20 +66,40 @@ export function Panel({
   );
 }
 
-export function Stat({ label, value, icon, tone = "blue" }: { label: string; value: number; icon?: ReactNode; tone?: "blue" | "amber" | "red" | "slate" }) {
+export function Stat({ label, value, icon, tone = "blue", active, onClick }: { label: string; value: number; icon?: ReactNode; tone?: "blue" | "amber" | "red" | "slate"; active?: boolean; onClick?: () => void }) {
   const toneClass = {
-    amber: "border-amber-200 bg-amber-50",
-    blue: "border-blue-200 bg-blue-50",
-    red: "border-red-200 bg-red-50",
-    slate: "border-slate-200 bg-white",
+    amber: active ? "border-amber-400 bg-amber-50 ring-2 ring-amber-200" : "border-amber-200 bg-amber-50",
+    blue: active ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200" : "border-blue-200 bg-blue-50",
+    red: active ? "border-red-400 bg-red-50 ring-2 ring-red-200" : "border-red-200 bg-red-50",
+    slate: active ? "border-slate-400 bg-white ring-2 ring-slate-200" : "border-slate-200 bg-white",
   }[tone];
-  return (
-    <div className={clsx("rounded-lg border p-4", toneClass)}>
+  const className = clsx(
+    "rounded-lg border p-4 text-left transition-[border-color,box-shadow,transform] duration-150",
+    onClick ? "w-full hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" : "",
+    toneClass,
+  );
+
+  const content = (
+    <>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-bold text-slate-600">{label}</p>
-        {icon ? <span className="text-[#214b74]">{icon}</span> : null}
+        <p className={clsx("text-sm font-bold", active ? "text-slate-900" : "text-slate-600")}>{label}</p>
+        {icon ? <span className={clsx(active ? "text-blue-700" : "text-[#214b74]")}>{icon}</span> : null}
       </div>
       <p className="mt-1 text-3xl font-black">{value}</p>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" className={className} onClick={onClick} aria-pressed={active}>
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={className}>
+      {content}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { BellRing, BriefcaseBusiness, Building2, CheckCircle, Database, FileText, KeyRound, ListTodo, LogOut, UsersRound, User as UserIcon } from "lucide-react";
+import { BellRing, BriefcaseBusiness, Building2, CheckCircle, Database, FileText, ListTodo, LogOut, UsersRound, User as UserIcon } from "lucide-react";
 import type { User, View } from "../types";
 import { NavButton } from "./shared";
 import { labels } from "../labels";
@@ -35,6 +35,7 @@ export function Sidebar({ user, view, onChange, onLogout, onOpenProfile }: { use
             <SidebarGroup label="Văn bản" />
             <NavButton active={view === "assigned"} icon={<FileText size={17} />} onClick={() => onChange("assigned")}>Văn bản xử lý chính</NavButton>
             <NavButton active={view === "all_documents"} icon={<FileText size={17} />} onClick={() => onChange("all_documents")}>Tất cả văn bản</NavButton>
+            <NavButton active={view === "completed_documents"} icon={<CheckCircle size={17} />} onClick={() => onChange("completed_documents")}>Văn bản đã hoàn tất</NavButton>
             <SidebarGroup label="Hệ thống" />
             <NavButton active={view === "users"} icon={<UsersRound size={17} />} onClick={() => onChange("users")}>Người dùng</NavButton>
             <NavButton active={view === "departments"} icon={<Building2 size={17} />} onClick={() => onChange("departments")}>Phòng ban</NavButton>

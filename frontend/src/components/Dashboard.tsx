@@ -1,8 +1,9 @@
 import { AlertTriangle, BriefcaseBusiness, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, FileText, Inbox, ListChecks, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import clsx from "clsx";
 import { api, errorMessage } from "../api";
 import { labels } from "../labels";
-import type { Dashboard, DashboardDocument, Department, User } from "../types";
+import type { Dashboard, DashboardDocument, Department, User, View } from "../types";
 import { fmtDateTimeSecond } from "../utils";
 import { DocumentModal } from "./Documents";
 import { Empty, Loading, PageTitle, Panel, Priority, Refresh, Stat, Status } from "./shared";
@@ -10,6 +11,15 @@ import { Empty, Loading, PageTitle, Panel, Priority, Refresh, Stat, Status } fro
 type Period = "week" | "month" | "all";
 type SortKey = "code" | "title" | "created_at" | "due_at" | "progress" | "status" | "priority";
 type SortDir = "asc" | "desc";
+type HighlightKey = "all" | "open" | "draft" | "in_progress" | "due_soon" | "overdue";
+type DashboardStat = {
+  label: string;
+  value: number;
+  icon: ReactNode;
+  tone?: "blue" | "amber" | "red" | "slate";
+  highlightKey?: HighlightKey;
+  completedView?: View;
+};
 
 function assigneeText(item: DashboardDocument) {
   if (!item.assignees.length) return "Chưa giao nhân viên";
@@ -59,16 +69,33 @@ function SortHead({ label, field, sortBy, sortDir, onSort }: { label: string; fi
   );
 }
 
+function matchesHighlight(item: DashboardDocument, highlightKey: HighlightKey) {
+  if (highlightKey === "all" || highlightKey === "open") return true;
+  return item.display_status === highlightKey;
+}
+
+function highlightRowClass(item: DashboardDocument, highlightKey: HighlightKey) {
+  if (!matchesHighlight(item, highlightKey)) return "hover:bg-slate-50";
+  if (highlightKey === "overdue") return "border-l-4 border-l-red-500 bg-red-50/70 hover:bg-red-100";
+  if (highlightKey === "due_soon") return "border-l-4 border-l-blue-500 bg-blue-50/80 hover:bg-blue-100";
+  if (highlightKey === "in_progress") return "border-l-4 border-l-amber-500 bg-amber-50/70 hover:bg-amber-100";
+  if (highlightKey === "draft") return "border-l-4 border-l-slate-400 bg-slate-50 hover:bg-slate-100";
+  if (highlightKey === "open") return "border-l-4 border-l-blue-500 bg-blue-50/70 hover:bg-blue-100";
+  return "hover:bg-blue-50";
+}
+
 function WorkGrid({
   items,
   sortBy,
   sortDir,
+  highlightKey,
   onSort,
   onOpen,
 }: {
   items: DashboardDocument[];
   sortBy: SortKey;
   sortDir: SortDir;
+  highlightKey: HighlightKey;
   onSort: (field: SortKey) => void;
   onOpen: (id: string) => void;
 }) {
@@ -89,7 +116,7 @@ function WorkGrid({
         </thead>
         <tbody>
           {items.map((doc) => (
-            <tr key={doc.id} className="cursor-pointer border-b hover:bg-blue-50" onClick={() => onOpen(doc.id)}>
+            <tr key={doc.id} className={clsx("cursor-pointer border-b transition-colors", highlightRowClass(doc, highlightKey))} onClick={() => onOpen(doc.id)}>
               <td className="px-3 py-3 font-bold">{doc.code || "-"}</td>
               <td className="px-3 py-3 font-bold">{doc.title}</td>
               <td className="px-3 py-3 text-slate-500">{fmtDateTimeSecond(doc.created_at)}</td>
@@ -107,13 +134,15 @@ function WorkGrid({
   );
 }
 
-export function DashboardView({ user, users, departments, onOpen, onChanged }: { user: User; users: User[]; departments: Department[]; onOpen: (id: string) => void; onChanged?: () => Promise<void> }) {
+export function DashboardView({ user, users, departments, onOpen, onChanged, onNavigate }: { user: User; users: User[]; departments: Department[]; onOpen: (id: string) => void; onChanged?: () => Promise<void>; onNavigate?: (view: View) => void }) {
   const [period, setPeriod] = useState<Exclude<Period, "all">>("week");
   const [anchorDate, setAnchorDate] = useState(() => new Date());
   const [data, setData] = useState<Dashboard | null>(null);
   const [creating, setCreating] = useState(false);
   const [sortBy, setSortBy] = useState<SortKey>("due_at");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [highlightKey, setHighlightKey] = useState<HighlightKey>("all");
+  const [selectedStatLabel, setSelectedStatLabel] = useState("Tổng văn bản");
   const [error, setError] = useState("");
 
   async function load() {
@@ -154,23 +183,50 @@ export function DashboardView({ user, users, departments, onOpen, onChanged }: {
       </section>
     );
   }
-  const stats = user.role === "manager"
+  const stats: DashboardStat[] = user.role === "manager"
     ? [
-        { label: "Tổng văn bản", value: data.total_documents, icon: <FileText size={20} /> },
-        { label: "Chưa giao", value: data.draft_documents, icon: <Inbox size={20} />, tone: "slate" as const },
-        { label: "Đang thực hiện", value: data.in_progress_documents, icon: <BriefcaseBusiness size={20} />, tone: "slate" as const },
-        { label: "Sắp đến hạn", value: data.due_soon_documents, icon: <CalendarClock size={20} />, tone: "blue" as const },
-        { label: "Quá hạn", value: data.overdue_documents, icon: <AlertTriangle size={20} />, tone: "red" as const },
-        { label: "Hoàn tất trong kỳ", value: data.completed_documents, icon: <CheckCircle2 size={20} />, tone: "slate" as const },
+        { label: "Tổng văn bản", value: data.total_documents, icon: <FileText size={20} />, highlightKey: "all" },
+        { label: "Chưa giao", value: data.draft_documents, icon: <Inbox size={20} />, tone: "slate", highlightKey: "draft" },
+        { label: "Đang thực hiện", value: data.in_progress_documents, icon: <BriefcaseBusiness size={20} />, tone: "slate", highlightKey: "in_progress" },
+        { label: "Sắp đến hạn", value: data.due_soon_documents, icon: <CalendarClock size={20} />, tone: "blue", highlightKey: "due_soon" },
+        { label: "Quá hạn", value: data.overdue_documents, icon: <AlertTriangle size={20} />, tone: "red", highlightKey: "overdue" },
+        { label: "Hoàn tất trong kỳ", value: data.completed_documents, icon: <CheckCircle2 size={20} />, tone: "slate", completedView: "completed_documents" },
       ]
     : [
-        { label: "Việc của tôi", value: data.total_documents, icon: <FileText size={20} /> },
-        { label: "Cần xử lý", value: data.open_documents, icon: <Inbox size={20} />, tone: "slate" as const },
-        { label: "Đang làm", value: data.in_progress_documents, icon: <BriefcaseBusiness size={20} />, tone: "slate" as const },
-        { label: "Sắp đến hạn", value: data.due_soon_documents, icon: <CalendarClock size={20} />, tone: "blue" as const },
-        { label: "Quá hạn", value: data.overdue_documents, icon: <AlertTriangle size={20} />, tone: "red" as const },
-        { label: "Đã nộp trong kỳ", value: data.completed_documents, icon: <CheckCircle2 size={20} />, tone: "slate" as const },
+        { label: "Việc của tôi", value: data.total_documents, icon: <FileText size={20} />, highlightKey: "all" },
+        { label: "Cần xử lý", value: data.open_documents, icon: <Inbox size={20} />, tone: "slate", highlightKey: "open" },
+        { label: "Đang làm", value: data.in_progress_documents, icon: <BriefcaseBusiness size={20} />, tone: "slate", highlightKey: "in_progress" },
+        { label: "Sắp đến hạn", value: data.due_soon_documents, icon: <CalendarClock size={20} />, tone: "blue", highlightKey: "due_soon" },
+        { label: "Quá hạn", value: data.overdue_documents, icon: <AlertTriangle size={20} />, tone: "red", highlightKey: "overdue" },
+        { label: "Đã nộp trong kỳ", value: data.completed_documents, icon: <CheckCircle2 size={20} />, tone: "slate", completedView: "assigned_completed" },
       ];
+  const selectedStat = stats.find((item) => item.label === selectedStatLabel);
+  const selectedHighlightCount = selectedStat?.highlightKey ? data.work_items.filter((item) => matchesHighlight(item, selectedStat.highlightKey!)).length : 0;
+  const selectedStatText = (() => {
+    if (!selectedStat) return "";
+    if (selectedStat.highlightKey === "all") {
+      return selectedStat.value === 0 ? "Chưa có văn bản nào trong kỳ đang chọn." : "";
+    }
+    if (selectedStat.completedView) {
+      return selectedStat.value
+        ? `${selectedStat.label} nằm ở màn danh sách đã hoàn tất, không trộn vào bảng văn bản cần xử lý.`
+        : `Chưa có ${selectedStat.label.toLowerCase()} trong kỳ đang chọn.`;
+    }
+    if (selectedStat.value === 0 || selectedHighlightCount === 0) {
+      return `Không có ${selectedStat.label.toLowerCase()} trong kỳ đang chọn.`;
+    }
+    return `${selectedHighlightCount} mục ${selectedStat.label.toLowerCase()} đang được tô màu trong bảng bên dưới.`;
+  })();
+
+  function handleStatClick(item: DashboardStat) {
+    setSelectedStatLabel(item.label);
+    if (item.completedView) {
+      setHighlightKey("all");
+      if (item.value > 0) onNavigate?.(item.completedView);
+      return;
+    }
+    if (item.highlightKey) setHighlightKey(item.highlightKey);
+  }
 
   return (
     <section>
@@ -198,10 +254,21 @@ export function DashboardView({ user, users, departments, onOpen, onChanged }: {
         </div>
       </div>
       <div className="mb-5 grid gap-3" style={{ gridTemplateColumns: `repeat(${stats.length}, minmax(0, 1fr))` }}>
-        {stats.map((item) => <Stat key={item.label} {...item} />)}
+        {stats.map((item) => {
+          const itemHighlightKey = item.highlightKey;
+          return (
+            <Stat
+              key={item.label}
+              {...item}
+              active={itemHighlightKey ? highlightKey === itemHighlightKey : selectedStatLabel === item.label}
+              onClick={() => handleStatClick(item)}
+            />
+          );
+        })}
       </div>
       <Panel title="Văn bản cần xử lý" icon={<ListChecks size={18} />}>
-        <WorkGrid items={data.work_items} sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} onOpen={onOpen} />
+        {selectedStatText ? <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-bold text-[#214b74]">{selectedStatText}</p> : null}
+        <WorkGrid items={data.work_items} sortBy={sortBy} sortDir={sortDir} highlightKey={highlightKey} onSort={toggleSort} onOpen={onOpen} />
       </Panel>
       {creating ? <DocumentModal users={users} departments={departments} onClose={() => setCreating(false)} onDone={async () => { setCreating(false); await load(); await onChanged?.(); }} /> : null}
     </section>
