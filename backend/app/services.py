@@ -16,7 +16,7 @@ def document_assignments(db: Session, document_id: str) -> list[DocumentAssignme
 
 def can_view_document(user: User, doc: Document, assignments: list[DocumentAssignment]) -> bool:
     if user.role == "manager":
-        return doc.created_by == user.id or any(item.assigned_by == user.id for item in assignments)
+        return True
     return any(item.assignee_id == user.id for item in assignments)
 
 
@@ -26,7 +26,7 @@ def ensure_can_view(user: User, doc: Document, assignments: list[DocumentAssignm
 
 
 def ensure_manager_owner(user: User, doc: Document) -> None:
-    if user.role != "manager" or doc.created_by != user.id:
+    if user.role != "manager":
         raise HTTPException(status_code=403, detail="Bạn không có quyền thao tác văn bản này")
 
 

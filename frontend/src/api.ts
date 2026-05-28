@@ -104,9 +104,18 @@ export async function apiDownload(path: string, defaultFilename: string = "downl
 
   const disposition = response.headers.get("Content-Disposition");
   let filename = defaultFilename;
-  if (disposition && disposition.includes("filename=")) {
-    const matches = disposition.match(/filename="?([^"]+)"?/);
-    if (matches && matches[1]) filename = matches[1];
+  if (disposition) {
+    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    const plain = disposition.match(/filename="?([^";]+)"?/i);
+    if (encoded?.[1]) {
+      try {
+        filename = decodeURIComponent(encoded[1]);
+      } catch {
+        filename = encoded[1];
+      }
+    } else if (plain?.[1]) {
+      filename = plain[1];
+    }
   }
 
   const blob = await response.blob();

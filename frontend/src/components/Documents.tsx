@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight, FileText, Plus, Search, X, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Plus, Search, X, Download, Save, Send, UploadCloud } from "lucide-react";
 import { api, errorMessage } from "../api";
 import type { AssignmentStatus, Department, DisplayStatus, DocumentRow, Page, Priority, User } from "../types";
 import { fmtDateTimeSecond, fromDateTimeInputValue } from "../utils";
@@ -266,31 +266,133 @@ export function DocumentModal({ users, departments, onClose, onDone }: { users: 
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-5">
-      <form onSubmit={submit} className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
-        <div className="mb-4 flex justify-between"><h3 className="text-lg font-black">Tạo văn bản</h3><button type="button" onClick={onClose}>Đóng</button></div>
-        {error ? <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm font-bold">Số hiệu/ký hiệu<input className="field mt-1 w-full" value={code} onChange={(e) => setCode(e.target.value)} /></label>
-          <label className="text-sm font-bold">Cơ quan/phòng ban thực hiện<select className="field mt-1 w-full" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}><option value="">Không chọn</option>{activeDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-          <label className="col-span-2 text-sm font-bold">Trích yếu *<textarea className="field mt-1 min-h-20 w-full" value={title} onChange={(e) => setTitle(e.target.value)} required /></label>
-          <label className="text-sm font-bold">Ngày ban hành<input className="field mt-1 w-full" type="datetime-local" step={1} value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} /></label>
-          <label className="text-sm font-bold">Hạn hoàn thành *<input className="field mt-1 w-full" type="datetime-local" step={1} value={dueAt} onChange={(e) => setDueAt(e.target.value)} required /></label>
-          <label className="text-sm font-bold">Độ ưu tiên<select className="field mt-1 w-full" value={priority} onChange={(e) => setPriority(e.target.value as Priority)}><option value="normal">Thường</option><option value="high">Khẩn</option><option value="urgent">Hỏa tốc</option></select></label>
-          <label className="text-sm font-bold">File văn bản gốc<input className="field mt-1 w-full" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
-          <label className="col-span-2 text-sm font-bold">Nội dung giao việc<textarea className="field mt-1 min-h-20 w-full" value={instruction} onChange={(e) => setInstruction(e.target.value)} /></label>
-          <label className="col-span-2 text-sm font-bold">Ghi chú/mô tả nội bộ<textarea className="field mt-1 min-h-16 w-full" value={summary} onChange={(e) => setSummary(e.target.value)} /></label>
-          <div className="col-span-2 rounded-lg border border-slate-200 p-3">
-            <div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm font-black">Nhân viên thực hiện</p><span className="text-xs font-bold text-slate-500">{assignees.length} đã chọn</span></div>
-            {selectedStaff.length ? <div className="mb-3 flex flex-wrap gap-2">{selectedStaff.map((u) => <button key={u.id} type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-[#214b74]" onClick={() => setAssignees(assignees.filter((id) => id !== u.id))}>{u.full_name} <X className="inline" size={12} /></button>)}</div> : null}
-            <div className="mb-2 grid grid-cols-[1fr_220px] gap-2">
-              <input className="field" placeholder="Tìm nhân viên theo tên/email..." value={staffSearch} onChange={(e) => setStaffSearch(e.target.value)} />
-              <select className="field" value={staffDepartment} onChange={(e) => setStaffDepartment(e.target.value)}><option value="">Tất cả phòng ban</option>{activeDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
+      <form onSubmit={submit} className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div>
+            <h3 className="text-xl font-black text-slate-950">Tạo văn bản</h3>
+          </div>
+          <button type="button" className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900" onClick={onClose} aria-label="Đóng">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.84fr)]">
+            <section className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded bg-blue-50 text-sm font-black text-[#214b74]">1</span>
+                <h4 className="text-sm font-black uppercase text-[#214b74]">Thông tin văn bản</h4>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="col-span-2 text-sm font-bold">
+                  Trích yếu *
+                  <textarea className="field mt-1 min-h-24 w-full resize-y" value={title} onChange={(e) => setTitle(e.target.value)} required />
+                </label>
+                <label className="text-sm font-bold">
+                  Số hiệu/ký hiệu
+                  <input className="field mt-1 w-full" value={code} onChange={(e) => setCode(e.target.value)} />
+                </label>
+                <label className="text-sm font-bold">
+                  Ngày ban hành
+                  <input className="field mt-1 w-full" type="datetime-local" step={1} value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} />
+                </label>
+                <label className="col-span-2 text-sm font-bold">
+                  Cơ quan/phòng ban thực hiện
+                  <select className="field mt-1 w-full" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
+                    <option value="">Không chọn</option>
+                    {activeDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </label>
+                <label htmlFor="document-source-file" className={clsx("col-span-2 flex min-h-24 cursor-pointer items-center gap-4 rounded-lg border-2 border-dashed p-4 transition-colors", file ? "border-[#1d6ef0] bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-[#1d6ef0] hover:bg-blue-50/60")}>
+                  <span className={clsx("grid h-12 w-12 shrink-0 place-items-center rounded-lg", file ? "bg-white text-[#1d6ef0]" : "bg-white text-slate-500")}>
+                    <UploadCloud size={24} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-black text-slate-950">File văn bản gốc</span>
+                    <span className={clsx("mt-1 block truncate text-sm font-semibold", file ? "text-[#214b74]" : "text-slate-500")}>{file ? file.name : "Chưa chọn file"}</span>
+                  </span>
+                  <span className="rounded-lg bg-white px-3 py-2 text-xs font-black text-[#214b74] shadow-sm">{file ? "Đổi file" : "Chọn file"}</span>
+                  <input id="document-source-file" className="sr-only" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                </label>
+                <label className="col-span-2 text-sm font-bold">
+                  Ghi chú/mô tả nội bộ
+                  <textarea className="field mt-1 min-h-24 w-full resize-y" value={summary} onChange={(e) => setSummary(e.target.value)} />
+                </label>
+              </div>
+            </section>
+
+            <div className="grid min-h-0 gap-4">
+              <section className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded bg-blue-50 text-sm font-black text-[#214b74]">2</span>
+                  <h4 className="text-sm font-black uppercase text-[#214b74]">Yêu cầu xử lý</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-sm font-bold">
+                    Hạn hoàn thành *
+                    <input className="field mt-1 w-full" type="datetime-local" step={1} value={dueAt} onChange={(e) => setDueAt(e.target.value)} required />
+                  </label>
+                  <label className="text-sm font-bold">
+                    Độ ưu tiên
+                    <select className="field mt-1 w-full" value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
+                      <option value="normal">Thường</option>
+                      <option value="high">Khẩn</option>
+                      <option value="urgent">Hỏa tốc</option>
+                    </select>
+                  </label>
+                  <label className="col-span-2 text-sm font-bold">
+                    Nội dung giao việc
+                    <textarea className="field mt-1 min-h-24 w-full resize-y" value={instruction} onChange={(e) => setInstruction(e.target.value)} />
+                  </label>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded bg-blue-50 text-sm font-black text-[#214b74]">3</span>
+                    <h4 className="text-sm font-black uppercase text-[#214b74]">Nhân viên thực hiện</h4>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600">{assignees.length} đã chọn</span>
+                </div>
+                {selectedStaff.length ? (
+                  <div className="mb-3 flex max-h-20 flex-wrap gap-2 overflow-y-auto pr-1">
+                    {selectedStaff.map((u) => (
+                      <button key={u.id} type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-[#214b74]" onClick={() => setAssignees((items) => items.filter((id) => id !== u.id))}>
+                        {u.full_name} <X className="inline" size={12} />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mb-3 grid grid-cols-[1fr_180px] gap-2">
+                  <input className="field" placeholder="Tìm nhân viên theo tên/email..." value={staffSearch} onChange={(e) => setStaffSearch(e.target.value)} />
+                  <select className="field" value={staffDepartment} onChange={(e) => setStaffDepartment(e.target.value)}>
+                    <option value="">Tất cả phòng ban</option>
+                    {activeDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+                <div className="thin-scrollbar grid max-h-72 gap-2 overflow-auto pr-1">
+                  {filteredStaff.map((u) => (
+                    <label key={u.id} className={clsx("grid cursor-pointer grid-cols-[auto_1fr] gap-x-2 rounded-lg border p-3 text-sm transition-colors", assignees.includes(u.id) ? "border-[#1d6ef0] bg-blue-50" : "border-slate-200 hover:bg-slate-50")}>
+                      <input type="checkbox" className="mt-1" checked={assignees.includes(u.id)} onChange={(e) => setAssignees((items) => e.target.checked ? [...items, u.id] : items.filter((id) => id !== u.id))} />
+                      <span>
+                        <b>{u.full_name}</b>
+                        <span className="block text-xs font-medium text-slate-500">{u.email}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {!filteredStaff.length ? <Empty text="Không tìm thấy nhân viên phù hợp." /> : null}
+              </section>
             </div>
-            <div className="thin-scrollbar grid max-h-56 grid-cols-2 gap-2 overflow-auto pr-1">{filteredStaff.map((u) => <label key={u.id} className={clsx("rounded-lg border p-3 text-sm", assignees.includes(u.id) ? "border-[#1d6ef0] bg-blue-50" : "border-slate-200")}><input type="checkbox" className="mr-2" checked={assignees.includes(u.id)} onChange={(e) => setAssignees(e.target.checked ? [...assignees, u.id] : assignees.filter((id) => id !== u.id))} /><b>{u.full_name}</b><div className="ml-6 text-xs text-slate-500">{u.email}</div></label>)}</div>
-            {!filteredStaff.length ? <Empty text="Không tìm thấy nhân viên phù hợp." /> : null}
           </div>
         </div>
-        <div className="mt-5 flex justify-end gap-2"><button type="button" className="icon-text-btn" onClick={onClose}>Hủy</button><button className="primary-btn"><Plus size={16} /> Lưu</button></div>
+
+        <div className="flex justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4">
+          <button type="button" className="icon-text-btn" onClick={onClose}>Hủy</button>
+          <button className="primary-btn">{assignees.length ? <Send size={16} /> : <Save size={16} />}{assignees.length ? "Giao việc" : "Lưu"}</button>
+        </div>
       </form>
     </div>
   );

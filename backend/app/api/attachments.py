@@ -1,3 +1,6 @@
+from pathlib import Path
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -9,6 +12,12 @@ from app.models import Document, DocumentAttachment, User
 from app.services import document_assignments, ensure_can_view
 
 router = APIRouter(prefix="/attachments", tags=["attachments"])
+
+
+def content_disposition(filename: str) -> str:
+    suffix = Path(filename).suffix
+    ascii_fallback = f"download{suffix}" if suffix.isascii() else "download"
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
 
 
 @router.get("/{attachment_id}/download")
@@ -25,5 +34,5 @@ def download_attachment(attachment_id: str, db: Session = Depends(get_db), curre
     return StreamingResponse(
         body,
         media_type=attachment.mime_type,
-        headers={"Content-Disposition": f'attachment; filename="{attachment.original_name}"'},
+        headers={"Content-Disposition": content_disposition(attachment.original_name)},
     )

@@ -38,13 +38,16 @@ button:disabled {
 
 .app-shell {
   display: flex;
-  min-height: calc(100vh - 84px);
+  height: calc(100vh - 84px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .app-sidebar {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  height: 100%;
   width: 280px;
   border-right: 1px solid #e2e8f0;
   background: #fff;
@@ -54,6 +57,13 @@ button:disabled {
 .app-sidebar-main {
   min-height: 0;
   flex: 1 1 0%;
+  overflow-y: auto;
+  padding-right: 0.125rem;
+}
+
+.app-shell > main {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .doc-table {

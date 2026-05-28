@@ -124,7 +124,7 @@ def comment_dict(item: DocumentComment) -> dict:
 
 def visible_document_ids_for_user(user: User):
     if user.role == "manager":
-        return select(Document.id).where(Document.created_by == user.id)
+        return select(Document.id)
     return select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == user.id)
 
 
@@ -238,8 +238,6 @@ def export_documents(
     if current_user.role == "manager":
         if scope == "my_tasks":
             query = query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == current_user.id)))
-        else:
-            query = query.where(Document.created_by == current_user.id)
     else:
         query = query.where(Document.id.in_(visible_document_ids_for_user(current_user)))
     query = apply_document_search(query, search)
@@ -423,8 +421,6 @@ def list_documents(
     if current_user.role == "manager":
         if scope == "my_tasks":
             query = query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == current_user.id)))
-        else:
-            query = query.where(Document.created_by == current_user.id)
     else:
         query = query.where(Document.id.in_(visible_document_ids_for_user(current_user)))
     query = apply_document_search(query, search)
@@ -482,9 +478,9 @@ def get_document(document_id: str, db: Session = Depends(get_db), current_user: 
         "comments": [comment_dict(item) for item in comments],
         "attachments": [attachment_to_dict(item, uploaders.get(item.uploaded_by)) for item in attachments],
         "my_permissions": {
-            "can_update": current_user.role == "manager" and doc.created_by == current_user.id,
-            "can_assign": current_user.role == "manager" and doc.created_by == current_user.id,
-            "can_delete": current_user.role == "manager" and doc.created_by == current_user.id,
+            "can_update": current_user.role == "manager",
+            "can_assign": current_user.role == "manager",
+            "can_delete": current_user.role == "manager",
         },
     }
 
@@ -643,8 +639,14 @@ async def upload_attachment(
     # Manager can only upload original files when document has no assignments yet
     if current_user.role == "manager" and not assignment_id and assignments:
         raise HTTPException(status_code=400, detail="Văn bản đã giao việc, không thể thêm file gốc")
-    if assignment_id and not any(item.id == assignment_id for item in assignments):
-        raise HTTPException(status_code=400, detail="Assignment không thuộc văn bản này")
+    if current_user.role == "staff" and not assignment_id:
+        raise HTTPException(status_code=400, detail="Nhân viên chỉ được upload file kết quả cho việc được giao")
+    if assignment_id:
+        assignment = next((item for item in assignments if item.id == assignment_id), None)
+        if not assignment:
+            raise HTTPException(status_code=400, detail="Assignment không thuộc văn bản này")
+        if current_user.role == "staff" and assignment.assignee_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Bạn không được upload file cho việc của người khác")
     storage_key, size = await get_storage_provider().save(file, f"documents/{doc.id}")
     attachment = DocumentAttachment(
         document_id=doc.id,

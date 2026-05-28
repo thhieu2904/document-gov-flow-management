@@ -72,10 +72,24 @@ def main() -> None:
     if not staff_docs["items"]:
         raise AssertionError("staff cannot see assigned document")
     ok(client.post(f"/api/assignments/{assignment_id}/start", headers=staff), "start assignment")
+    uploaded = ok(
+        client.post(
+            f"/api/documents/{doc_id}/attachments",
+            headers=staff,
+            data={"assignment_id": assignment_id},
+            files={"file": ("ket_qua_xu_ly.txt", b"Ket qua xu ly", "text/plain")},
+        ),
+        "upload assignment result file",
+    )
+    if uploaded["assignment_id"] != assignment_id:
+        raise AssertionError("result file was not linked to assignment")
     ok(client.post(f"/api/assignments/{assignment_id}/submit", headers=staff, json={"result_note": "Đã xử lý xong"}), "submit assignment")
     detail = ok(client.get(f"/api/documents/{doc_id}", headers=manager), "manager detail")
     if detail["status"] != "completed":
         raise AssertionError("document not completed")
+    result_files = [item for item in detail["attachments"] if item["assignment_id"] == assignment_id]
+    if not result_files:
+        raise AssertionError("manager cannot see assignment result file")
 
     status(client.post("/api/documents", headers=staff, json={"title": "Staff cannot create"}), 403, "staff create blocked")
 

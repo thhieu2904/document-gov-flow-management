@@ -107,13 +107,11 @@ def dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role == "manager":
-        doc_filter = Document.created_by == current_user.id
-    else:
-        doc_filter = Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == current_user.id))
-
     start, end = period_bounds(period, anchor_date)
-    all_docs = db.scalars(select(Document).where(doc_filter).order_by(Document.due_at.asc().nulls_last(), Document.updated_at.desc())).all()
+    query = select(Document).order_by(Document.due_at.asc().nulls_last(), Document.updated_at.desc())
+    if current_user.role != "manager":
+        query = query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == current_user.id)))
+    all_docs = db.scalars(query).all()
     docs = [doc for doc in all_docs if in_period(doc, start, end)]
     by_doc = document_assignments_map(db, [doc.id for doc in docs])
     
@@ -134,7 +132,6 @@ def dashboard(
     draft_count = len([item for item in work_items if item["display_status"] == "draft"])
     period_assignments = [item for items in by_doc.values() for item in items]
     if current_user.role == "manager":
-        period_assignments = [item for item in period_assignments if item.assigned_by == current_user.id]
         completed_count = len([doc for doc in docs if doc.status == "completed"])
     else:
         period_assignments = [item for item in period_assignments if item.assignee_id == current_user.id]

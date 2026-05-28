@@ -197,7 +197,7 @@ def report_bounds(kind: str, now: datetime | None = None) -> tuple[datetime, dat
 
 async def run_manager_report(db: Session, manager: User, kind: str, dry_run: bool = True) -> dict:
     start, end, label = report_bounds(kind)
-    docs = db.scalars(select(Document).where(Document.created_by == manager.id)).all()
+    docs = db.scalars(select(Document)).all()
     in_range = [doc for doc in docs if any(value and start <= value < end for value in [doc.issued_at, doc.due_at, doc.completed_at])]
     open_docs = [doc for doc in docs if doc.status != "completed"]
     late_completed = [doc for doc in in_range if doc.status == "completed" and doc.due_at and doc.completed_at and doc.completed_at > doc.due_at]
