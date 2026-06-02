@@ -100,12 +100,13 @@ export function KpiDisplayView() {
       .catch((err) => setError(errorMessage(err, "Không tải được dữ liệu hiển thị chỉ tiêu")));
   }, [selectedPeriod?.id, month, year]);
 
-  const visibleRows = useMemo(() => {
-    const base = selectedStatus === "all" ? rows || [] : (rows || []).filter((row) => row.status === selectedStatus);
-    return orderedRows(base);
-  }, [rows, selectedStatus]);
+  const allOrderedRows = useMemo(() => orderedRows(rows || []), [rows]);
 
-  const chartRows = useMemo<ChartRow[]>(() => visibleRows.map((row) => ({
+  const visibleRows = useMemo(() => {
+    return selectedStatus === "all" ? allOrderedRows : allOrderedRows.filter((row) => row.status === selectedStatus);
+  }, [allOrderedRows, selectedStatus]);
+
+  const chartRows = useMemo<ChartRow[]>(() => allOrderedRows.map((row) => ({
     id: row.indicator.id,
     number: row.indicator.number,
     name: row.indicator.name,
@@ -114,7 +115,7 @@ export function KpiDisplayView() {
     percentage: row.percentage,
     status: row.status,
     note: row.note,
-  })), [visibleRows]);
+  })), [allOrderedRows]);
 
   const maxValue = Math.max(110, ...chartRows.map((row) => row.value)) + 8;
 
@@ -151,7 +152,7 @@ export function KpiDisplayView() {
               ))}
             </div>
 
-            <Panel title={selectedStatus === "all" ? "So sánh 21 chỉ tiêu với mốc 100%" : `So sánh nhóm: ${labels.kpiStatus[selectedStatus]}`} icon={<BarChart3 size={18} />} bodyClassName="h-[780px]">
+            <Panel title={selectedStatus === "all" ? "So sánh 21 chỉ tiêu với mốc 100%" : `Đang làm nổi bật nhóm: ${labels.kpiStatus[selectedStatus]}`} icon={<BarChart3 size={18} />} bodyClassName="h-[780px]">
               <ResponsiveContainer width="100%" height={700}>
                 <BarChart data={chartRows} layout="vertical" margin={{ top: 16, right: 58, left: 8, bottom: 12 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
@@ -167,10 +168,18 @@ export function KpiDisplayView() {
                       const row = payload?.[0]?.payload as ChartRow | undefined;
                       return row ? `Chỉ tiêu ${row.number}: ${row.name}` : "";
                     }}
+                    cursor={{ fill: "rgba(0,0,0,0.04)" }}
                   />
                   <Bar dataKey="value" radius={[0, 5, 5, 0]} isAnimationActive>
                     <LabelList dataKey="percentage" position="right" formatter={(value: number | null) => value == null ? "" : formatKpiPercent(value)} style={{ fontSize: 11, fontWeight: 800, fill: "#334155" }} />
-                    {chartRows.map((row) => <Cell key={row.id} fill={KPI_STATUS_COLORS[row.status]} />)}
+                    {chartRows.map((row) => (
+                      <Cell 
+                        key={row.id} 
+                        fill={KPI_STATUS_COLORS[row.status]} 
+                        opacity={selectedStatus === "all" || selectedStatus === row.status ? 1 : 0.15} 
+                        className="transition-opacity duration-300"
+                      />
+                    ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>

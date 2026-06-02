@@ -27,12 +27,6 @@ export function Header({ user, view, onChange }: { user: User; view: View; onCha
             <h1 className="text-2xl font-bold uppercase">Quản lý văn bản nội bộ</h1>
           </div>
         </div>
-        <nav className="flex flex-wrap gap-2">
-          {user.role === "manager" ? (
-            <HeaderNavButton active={view === "kpi_input"} icon={<PencilLine size={16} />} onClick={() => onChange("kpi_input")}>Nhập chỉ tiêu</HeaderNavButton>
-          ) : null}
-          <HeaderNavButton active={view === "kpi_display"} icon={<BarChart3 size={16} />} onClick={() => onChange("kpi_display")}>Biểu đồ chỉ tiêu</HeaderNavButton>
-        </nav>
       </div>
     </header>
   );

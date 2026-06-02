@@ -16,7 +16,7 @@ import {
   MonthPicker,
 } from "./KpiShared";
 
-type EditableRow = KpiResultRow & { percentageInput: string; noteInput: string };
+type EditableRow = KpiResultRow & { percentageInput: string; noteInput: string; isSaving?: boolean };
 
 function toEditable(row: KpiResultRow): EditableRow {
   return { ...row, percentageInput: row.percentage == null ? "" : String(row.percentage), noteInput: row.note || "" };
@@ -97,37 +97,38 @@ export function KpiInputView({ currentUser }: { currentUser: User }) {
     }
   }
 
-  async function save() {
-    if (!canEdit || !rows) return;
-    const invalid = rows.find((row) => !row.department);
-    if (invalid) {
-      setError(`Chỉ tiêu số ${invalid.indicator.number} chưa được gán phòng ban.`);
+  async function saveRow(row: EditableRow) {
+    if (!canEdit) return;
+    if (!row.department) {
+      setError(`Chỉ tiêu số ${row.indicator.number} chưa được gán phòng ban.`);
       return;
     }
     setError("");
     setNotice("");
-    setSaving(true);
+    updateRow(row.indicator.id, { isSaving: true });
     try {
       const period = await ensurePeriod();
       await api(`/kpi/periods/${period.id}/results`, {
         method: "PUT",
         body: JSON.stringify({
-          results: rows.map((row) => ({
+          results: [{
             indicator_id: row.indicator.id,
-            department_id: row.department!.id,
+            department_id: row.department.id,
             percentage: row.percentageInput.trim() === "" ? null : Number(row.percentageInput),
             note: row.noteInput.trim() || null,
-          })),
+          }],
         }),
       });
-      setNotice(`Đã lưu ${period.name}.`);
+      setNotice(`Đã lưu chỉ tiêu số ${row.indicator.number}.`);
       await reloadPeriods();
-      const nextRows = await api<KpiResultRow[]>(`/kpi/periods/${period.id}/results`);
-      setRows(nextRows.map(toEditable));
+      updateRow(row.indicator.id, { 
+         isSaving: false,
+         percentage: row.percentageInput.trim() === "" ? null : Number(row.percentageInput),
+         note: row.noteInput.trim() || null
+      });
     } catch (err) {
-      setError(errorMessage(err, "Không lưu được chỉ tiêu tháng"));
-    } finally {
-      setSaving(false);
+      setError(errorMessage(err, `Không lưu được chỉ tiêu số ${row.indicator.number}`));
+      updateRow(row.indicator.id, { isSaving: false });
     }
   }
 
@@ -138,7 +139,6 @@ export function KpiInputView({ currentUser }: { currentUser: User }) {
       <PageTitle
         title="Nhập chỉ tiêu tháng"
         desc="Chọn tháng cần nhập. Tháng chưa có dữ liệu sẽ hiện 21 dòng trống, lưu lần đầu sẽ tự ghi nhận tháng đó."
-        action={canEdit ? <button className="primary-btn" disabled={saving || !rows?.length} onClick={() => void save()}><Save size={16} /> {saving ? "Đang lưu..." : "Lưu tháng"}</button> : null}
       />
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-lg border bg-white p-3">
         <MonthPicker periods={periods} month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
@@ -152,33 +152,48 @@ export function KpiInputView({ currentUser }: { currentUser: User }) {
       <Panel title={`Bảng nhập 21 chỉ tiêu - ${enteredCount} dòng có %`} icon={<Target size={18} />}>
         {rowsLoading || !rows ? <Loading /> : rows.length ? (
           <div className="thin-scrollbar overflow-auto">
-            <table className="w-full min-w-[1080px] text-sm">
+            <table className="w-full min-w-[1080px] text-sm text-slate-700">
               <thead>
-                <tr className="bg-[#214b74] text-left text-xs uppercase text-white">
-                  <th className="w-14 px-3 py-3">Số</th>
-                  <th className="px-3 py-3">Chỉ tiêu</th>
-                  <th className="w-32 px-3 py-3">% đạt</th>
-                  <th className="w-36 px-3 py-3">Đánh giá</th>
-                  <th className="px-3 py-3">Nội dung chi tiết nếu có</th>
+                <tr className="border-b border-slate-200 bg-slate-50/50 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <th className="w-14 px-4 py-4 text-center">Số</th>
+                  <th className="px-4 py-4">Chỉ tiêu</th>
+                  <th className="w-40 px-4 py-4">% đạt</th>
+                  <th className="w-36 px-4 py-4">Đánh giá</th>
+                  <th className="px-4 py-4 w-[380px]">Nội dung chi tiết nếu có</th>
+                  <th className="w-24 px-4 py-4 text-center">Thao tác</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100 bg-white">
                 {rows.map((row) => {
                   const percentage = row.percentageInput.trim() === "" ? null : Number(row.percentageInput);
                   const status = classifyKpiStatus(percentage);
                   return (
-                    <tr key={row.indicator.id} className={clsx("border-b", kpiRowTone(status))}>
-                      <td className="px-3 py-3 font-black">{row.indicator.number}</td>
-                      <td className="px-3 py-3 font-bold">
-                        {row.indicator.name}
-                        <div className="line-clamp-2 text-xs font-normal text-slate-500">{row.indicator.description || "-"}</div>
+                    <tr key={row.indicator.id} className={clsx("transition-colors hover:bg-slate-50/50", kpiRowTone(status))}>
+                      <td className="px-4 py-5 text-center text-[13px] font-bold text-slate-400">{row.indicator.number}</td>
+                      <td className="px-4 py-5">
+                        <div className="font-semibold text-slate-800">{row.indicator.name}</div>
+                        <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{row.indicator.description || "-"}</div>
                       </td>
-                      <td className="px-3 py-3">
-                        {canEdit ? <input className="field w-28" type="number" min={0} step="0.01" value={row.percentageInput} onChange={(event) => updateRow(row.indicator.id, { percentageInput: event.target.value })} /> : <strong>{formatKpiPercent(row.percentage)}</strong>}
+                      <td className="px-4 py-5 align-top pt-5">
+                        {canEdit ? (
+                          <div className="relative flex items-center">
+                            <input className="w-24 rounded-md border-0 bg-slate-50 px-3 py-2 text-sm font-semibold shadow-sm ring-1 ring-inset ring-slate-200 transition-all focus:bg-white focus:ring-2 focus:ring-inset focus:ring-[#214b74]" type="number" min={0} step="0.01" placeholder="Nhập %" value={row.percentageInput} onChange={(event) => updateRow(row.indicator.id, { percentageInput: event.target.value })} />
+                            <span className="ml-2 text-slate-400 font-medium">%</span>
+                          </div>
+                        ) : <strong className="text-slate-800">{formatKpiPercent(row.percentage)}</strong>}
                       </td>
-                      <td className="px-3 py-3"><KpiStatusBadge status={status} /></td>
-                      <td className="px-3 py-3">
-                        {canEdit ? <textarea className="field min-h-16 w-full min-w-[420px]" value={row.noteInput} onChange={(event) => updateRow(row.indicator.id, { noteInput: event.target.value })} placeholder="Nhập nội dung để đưa vào báo cáo, nếu có" /> : (row.note || "-")}
+                      <td className="px-4 py-5 align-top pt-5"><KpiStatusBadge status={status} /></td>
+                      <td className="px-4 py-5 align-top">
+                        {canEdit ? (
+                          <textarea className="min-h-[72px] w-full resize-y rounded-md border-0 bg-slate-50 p-3 text-[13px] leading-relaxed shadow-sm ring-1 ring-inset ring-slate-200 transition-all focus:bg-white focus:ring-2 focus:ring-inset focus:ring-[#214b74]" value={row.noteInput} onChange={(event) => updateRow(row.indicator.id, { noteInput: event.target.value })} placeholder="Nhập nội dung để đưa vào báo cáo, nếu có" />
+                        ) : <div className="text-[13px] leading-relaxed text-slate-600">{row.note || "-"}</div>}
+                      </td>
+                      <td className="px-4 py-5 align-top pt-5 text-center">
+                        {canEdit && (
+                           <button className="primary-btn px-3 py-1.5 text-xs w-full justify-center" disabled={row.isSaving} onClick={() => void saveRow(row)}>
+                             <Save size={14} className="mr-1" /> {row.isSaving ? "..." : "Lưu"}
+                           </button>
+                        )}
                       </td>
                     </tr>
                   );
