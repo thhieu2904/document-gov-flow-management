@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { BellRing, BriefcaseBusiness, Building2, CheckCircle, Database, FileText, ListTodo, LogOut, UsersRound, User as UserIcon } from "lucide-react";
+import { BarChart3, BellRing, BriefcaseBusiness, Building2, CheckCircle, Database, FileText, ListTodo, LogOut, PencilLine, UsersRound, User as UserIcon } from "lucide-react";
 import type { User, View } from "../types";
 import { NavButton } from "./shared";
 import { labels } from "../labels";
@@ -40,6 +40,9 @@ export function Sidebar({ user, view, onChange, onLogout, onOpenProfile }: { use
             <NavButton active={view === "users"} icon={<UsersRound size={17} />} onClick={() => onChange("users")}>Người dùng</NavButton>
             <NavButton active={view === "departments"} icon={<Building2 size={17} />} onClick={() => onChange("departments")}>Phòng ban</NavButton>
             <NavButton active={view === "reminders"} icon={<BellRing size={17} />} onClick={() => onChange("reminders")}>Nhắc hẹn</NavButton>
+            <SidebarGroup label="Chỉ tiêu" />
+            <NavButton active={view === "kpi_input"} icon={<PencilLine size={17} />} onClick={() => onChange("kpi_input")}>Nhập chỉ tiêu</NavButton>
+            <NavButton active={view === "kpi_display"} icon={<BarChart3 size={17} />} onClick={() => onChange("kpi_display")}>Biểu đồ chỉ tiêu</NavButton>
           </>
         ) : (
           <>
@@ -48,6 +51,7 @@ export function Sidebar({ user, view, onChange, onLogout, onOpenProfile }: { use
             <NavButton active={view === "assigned_completed"} icon={<CheckCircle size={17} />} onClick={() => onChange("assigned_completed")}>Việc đã hoàn tất</NavButton>
             <SidebarGroup label="Tra cứu" />
             <NavButton active={view === "assigned"} icon={<Database size={17} />} onClick={() => onChange("assigned")}>Tất cả việc được giao</NavButton>
+            <NavButton active={view === "kpi_display"} icon={<BarChart3 size={17} />} onClick={() => onChange("kpi_display")}>Biểu đồ chỉ tiêu</NavButton>
           </>
         )}
       </div>

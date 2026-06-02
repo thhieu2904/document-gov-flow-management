@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 import uuid
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -162,3 +162,55 @@ class EmailLog(Base):
     document: Mapped[Document | None] = relationship(foreign_keys=[document_id])
     assignment: Mapped[DocumentAssignment | None] = relationship(foreign_keys=[assignment_id])
     recipient: Mapped[User | None] = relationship(foreign_keys=[recipient_user_id])
+
+
+class KpiIndicator(Base):
+    __tablename__ = "kpi_indicators"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    number: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    department_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("departments.id"), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+    department: Mapped[Department | None] = relationship(foreign_keys=[department_id])
+
+
+class KpiPeriod(Base):
+    __tablename__ = "kpi_periods"
+    __table_args__ = (UniqueConstraint("month", "year", name="uq_kpi_periods_month_year"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    month: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="open", index=True)
+    created_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+    creator: Mapped[User] = relationship(foreign_keys=[created_by])
+
+
+class KpiResult(Base):
+    __tablename__ = "kpi_results"
+    __table_args__ = (UniqueConstraint("period_id", "indicator_id", "department_id", name="uq_kpi_results_period_indicator_department"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    period_id: Mapped[str] = mapped_column(String(36), ForeignKey("kpi_periods.id"), nullable=False, index=True)
+    indicator_id: Mapped[str] = mapped_column(String(36), ForeignKey("kpi_indicators.id"), nullable=False, index=True)
+    department_id: Mapped[str] = mapped_column(String(36), ForeignKey("departments.id"), nullable=False, index=True)
+    percentage: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(50), default="not_entered", index=True)
+    note: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+    period: Mapped[KpiPeriod] = relationship(foreign_keys=[period_id])
+    indicator: Mapped[KpiIndicator] = relationship(foreign_keys=[indicator_id])
+    department: Mapped[Department] = relationship(foreign_keys=[department_id])
+    updater: Mapped[User | None] = relationship(foreign_keys=[updated_by])

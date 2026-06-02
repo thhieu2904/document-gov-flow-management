@@ -21,6 +21,11 @@ const fieldLabels: Record<string, string> = {
   issued_at: "Ngày ban hành",
   priority: "Độ ưu tiên",
   file: "File",
+  month: "Tháng",
+  year: "Năm",
+  number: "Số chỉ tiêu",
+  percentage: "% hoàn thành",
+  note: "Ghi chú",
 };
 
 function fieldLabel(loc: ValidationDetail["loc"]) {

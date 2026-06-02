@@ -3,7 +3,8 @@ export type Priority = "normal" | "high" | "urgent";
 export type DocumentStatus = "draft" | "in_progress" | "completed";
 export type DisplayStatus = DocumentStatus | "due_soon" | "overdue" | "completed_late";
 export type AssignmentStatus = "pending" | "in_progress" | "completed" | "overdue";
-export type View = "dashboard" | "assigned" | "assigned_pending" | "assigned_completed" | "all_documents" | "completed_documents" | "users" | "departments" | "reminders";
+export type KpiStatus = "not_entered" | "exceeded" | "above_98" | "above_68" | "above_50" | "below_50";
+export type View = "dashboard" | "assigned" | "assigned_pending" | "assigned_completed" | "all_documents" | "completed_documents" | "users" | "departments" | "reminders" | "kpi_input" | "kpi_display";
 
 export type User = {
   id: string;
@@ -24,6 +25,59 @@ export type Department = {
   member_count?: number;
   active_member_count?: number;
   document_count?: number;
+};
+
+export type KpiIndicator = {
+  id: string;
+  number: number;
+  name: string;
+  description: string | null;
+  department_id: string | null;
+  department?: { id: string; name: string } | null;
+  is_active: boolean;
+};
+
+export type KpiPeriod = {
+  id: string;
+  month: number;
+  year: number;
+  name: string;
+  status: "open" | "closed";
+  total_count: number;
+  entered_count: number;
+};
+
+export type KpiResultRow = {
+  id: string | null;
+  indicator: { id: string; number: number; name: string; description?: string | null };
+  department: { id: string; name: string } | null;
+  percentage: number | null;
+  status: KpiStatus;
+  status_label: string;
+  note: string | null;
+};
+
+export type KpiSummary = {
+  period_name: string;
+  total: number;
+  exceeded: number;
+  above_98: number;
+  above_68: number;
+  above_50: number;
+  below_50: number;
+  not_entered: number;
+  report_text: string;
+};
+
+export type KpiChartItem = {
+  name: string;
+  percentage: number | null;
+  status: KpiStatus;
+};
+
+export type KpiChartData = {
+  labels: string[];
+  data: KpiChartItem[];
 };
 
 export type Page<T> = { items: T[]; page: number; size: number; total: number };

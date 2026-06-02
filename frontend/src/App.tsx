@@ -6,6 +6,8 @@ import { DepartmentsView } from "./components/Departments";
 import { DetailModal } from "./components/DetailModal";
 import { DocumentsView } from "./components/Documents";
 import { Header } from "./components/Header";
+import { KpiDisplayView } from "./components/KpiDisplay";
+import { KpiInputView } from "./components/KpiMonthly";
 import { Login } from "./components/Login";
 import { RemindersView } from "./components/Reminders";
 import { Sidebar } from "./components/Sidebar";
@@ -46,7 +48,7 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    if (currentUser?.role === "staff" && (view === "users" || view === "departments" || view === "all_documents" || view === "completed_documents" || view === "reminders")) setView("dashboard");
+    if (currentUser?.role === "staff" && (view === "users" || view === "departments" || view === "all_documents" || view === "completed_documents" || view === "reminders" || view === "kpi_input")) setView("dashboard");
   }, [currentUser?.role, view]);
 
   useEffect(() => {
@@ -76,7 +78,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
-      <Header />
+      <Header user={currentUser} view={view} onChange={setView} />
       <div className="app-shell">
         <Sidebar user={currentUser} view={view} onChange={setView} onLogout={logout} onOpenProfile={() => setProfileModal(true)} />
         <main className="min-w-0 flex-1 p-5">
@@ -90,6 +92,8 @@ export default function App() {
           {view === "users" ? <UsersView users={users} departments={departments} currentUser={currentUser} onChanged={refreshReference} /> : null}
           {view === "departments" ? <DepartmentsView departments={departments} users={users} onChanged={refreshReference} /> : null}
           {view === "reminders" ? <RemindersView /> : null}
+          {view === "kpi_input" ? <KpiInputView currentUser={currentUser} /> : null}
+          {view === "kpi_display" ? <KpiDisplayView /> : null}
         </main>
       </div>
       {detail ? <DetailModal detail={detail} currentUser={currentUser} users={users} onClose={() => setDetailId(null)} onReload={reloadDetail} /> : null}

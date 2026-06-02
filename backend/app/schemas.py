@@ -135,3 +135,38 @@ class Page(BaseModel):
     page: int
     size: int
     total: int
+
+
+class KpiIndicatorCreate(BaseModel):
+    number: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=500)
+    description: str | None = None
+    department_id: str | None = None
+
+
+class KpiIndicatorUpdate(BaseModel):
+    number: int | None = Field(default=None, ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=500)
+    description: str | None = None
+    department_id: str | None = None
+    is_active: bool | None = None
+
+
+class KpiPeriodCreate(BaseModel):
+    month: int = Field(ge=1, le=12)
+    year: int = Field(ge=2020, le=2100)
+
+
+class KpiPeriodUpdate(BaseModel):
+    status: str = Field(pattern="^(open|closed)$")
+
+
+class KpiResultBatchItem(BaseModel):
+    indicator_id: str
+    department_id: str
+    percentage: float | None = Field(default=None, ge=0)
+    note: str | None = None
+
+
+class KpiResultBatch(BaseModel):
+    results: list[KpiResultBatchItem]

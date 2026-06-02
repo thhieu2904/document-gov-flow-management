@@ -1,4 +1,4 @@
-import type { AssignmentStatus, DisplayStatus, DocumentStatus, Priority, Role } from "./types";
+import type { AssignmentStatus, DisplayStatus, DocumentStatus, KpiStatus, Priority, Role } from "./types";
 
 export const labels = {
   role: { manager: "Quản lý", staff: "Nhân viên" } as Record<Role, string>,
@@ -22,4 +22,12 @@ export const labels = {
     completed: "Hoàn tất",
     overdue: "Quá hạn",
   } as Record<AssignmentStatus, string>,
+  kpiStatus: {
+    not_entered: "Chưa đánh giá",
+    exceeded: "Đạt và vượt",
+    above_98: "Đạt trên 98%",
+    above_68: "Đạt trên 68%",
+    above_50: "Đạt trên 50%",
+    below_50: "Đạt dưới 50%",
+  } as Record<KpiStatus, string>,
 };
