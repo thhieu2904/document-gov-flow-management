@@ -2,17 +2,25 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.captcha import create_captcha_challenge, verify_captcha
 from app.core.auth_provider import get_auth_provider
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import User
-from app.schemas import LoginRequest, PasswordChangeRequest, UserOut
+from app.schemas import CaptchaChallenge, LoginRequest, PasswordChangeRequest, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+@router.get("/captcha", response_model=CaptchaChallenge)
+def captcha():
+    return create_captcha_challenge()
+
+
 @router.post("/login")
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    if not verify_captcha(payload.captcha_token, payload.captcha_answer):
+        raise HTTPException(status_code=400, detail="Mã xác nhận không đúng hoặc đã hết hạn")
     provider = get_auth_provider()
     result = provider.login(db, payload.email.lower(), payload.password)
     user = None

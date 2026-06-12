@@ -10,6 +10,8 @@ type ValidationDetail = {
 const fieldLabels: Record<string, string> = {
   email: "Email",
   password: "Mật khẩu",
+  captcha_answer: "Mã xác nhận",
+  captcha_token: "Mã xác nhận",
   current_password: "Mật khẩu hiện tại",
   new_password: "Mật khẩu mới",
   full_name: "Họ tên",

@@ -6,6 +6,15 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    captcha_token: str | None = None
+    captcha_answer: str | None = None
+
+
+class CaptchaChallenge(BaseModel):
+    captcha_id: str
+    captcha_code: str
+    captcha_token: str
+    expires_in_seconds: int
 
 
 class PasswordChangeRequest(BaseModel):

@@ -49,6 +49,30 @@ const STATUS_RANK: Record<KpiStatus, number> = {
   not_entered: 5,
 };
 
+function KpiChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: ChartRow }> }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
+  const note = row.note?.trim();
+
+  return (
+    <div className="max-w-sm rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-lg">
+      <p className="text-xs font-black uppercase text-[#214b74]">Chỉ tiêu {row.number}</p>
+      <p className="mt-1 font-black text-slate-900">{row.name}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <strong className={row.percentage != null && row.percentage >= 100 ? "text-emerald-700" : "text-red-700"}>
+          {formatKpiPercent(row.percentage)}
+        </strong>
+        <span className="text-xs font-bold text-slate-500">{targetGapText(row.percentage)}</span>
+        <KpiStatusBadge status={row.status} />
+      </div>
+      <p className="mt-2 max-h-24 overflow-y-auto rounded-md bg-slate-50 px-3 py-2 text-xs font-semibold leading-relaxed text-slate-700">
+        {note || "Chưa có ghi chú cho chỉ tiêu này."}
+      </p>
+    </div>
+  );
+}
+
 function orderedRows(rows: KpiResultRow[]) {
   return [...rows].sort((a, b) => {
     const rank = STATUS_RANK[a.status] - STATUS_RANK[b.status];
@@ -160,13 +184,9 @@ export function KpiDisplayView() {
                   <YAxis type="category" dataKey="shortName" width={220} tick={{ fontSize: 11, fontWeight: 700 }} interval={0} />
                   <ReferenceLine x={100} stroke="#0f172a" strokeDasharray="4 4" label={{ value: "Mốc 100%", position: "top", fill: "#0f172a", fontWeight: 800 }} />
                   <Tooltip
-                    formatter={(_, __, item) => {
-                      const row = item.payload as ChartRow;
-                      return [row.percentage == null ? "Chưa đánh giá" : `${formatKpiPercent(row.percentage)} (${targetGapText(row.percentage)})`, labels.kpiStatus[row.status]];
-                    }}
-                    labelFormatter={(_, payload) => {
-                      const row = payload?.[0]?.payload as ChartRow | undefined;
-                      return row ? `Chỉ tiêu ${row.number}: ${row.name}` : "";
+                    content={(props: unknown) => {
+                      const tooltip = props as { active?: boolean; payload?: Array<{ payload?: ChartRow }> };
+                      return <KpiChartTooltip active={tooltip.active} payload={tooltip.payload} />;
                     }}
                     cursor={{ fill: "rgba(0,0,0,0.04)" }}
                   />

@@ -1,11 +1,21 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import clsx from "clsx";
-import { Loader2 } from "lucide-react";
+import { Loader2, RefreshCcw } from "lucide-react";
 import { api, errorMessage } from "../api";
+
+type CaptchaChallenge = {
+  captcha_id: string;
+  captcha_code: string;
+  captcha_token: string;
+  expires_in_seconds: number;
+};
 
 export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
   const [email, setEmail] = useState("manager@example.com");
   const [password, setPassword] = useState("password123");
+  const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
+  const [captchaLoading, setCaptchaLoading] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const demo = [
@@ -15,15 +25,53 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
     ["nhanvien3@example.com", "Nhân viên: có việc đã hoàn tất"],
   ];
 
-  async function submit(e: React.FormEvent) {
+  const refreshCaptcha = useCallback(async (showError = true) => {
+    setCaptchaLoading(true);
+    try {
+      const result = await api<CaptchaChallenge>("/auth/captcha");
+      setCaptcha(result);
+      setCaptchaAnswer("");
+    } catch (err) {
+      if (showError) setError(errorMessage(err, "Không tải được mã xác nhận"));
+      setCaptcha(null);
+    } finally {
+      setCaptchaLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCaptcha();
+  }, [refreshCaptcha]);
+
+  async function submit(e: FormEvent) {
     e.preventDefault();
+    if (!captcha) {
+      setError("Chưa có mã xác nhận. Vui lòng bấm Đổi mã rồi thử lại.");
+      return;
+    }
+    if (!captchaAnswer.trim()) {
+      setError("Vui lòng nhập mã xác nhận.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const result = await api<{ access_token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      const result = await api<{ access_token: string }>(
+        "/auth/login",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email,
+            password,
+            captcha_token: captcha.captcha_token,
+            captcha_answer: captchaAnswer.trim(),
+          }),
+        },
+      );
       onLoggedIn(result.access_token);
     } catch (err) {
       setError(errorMessage(err, "Không đăng nhập được"));
+      void refreshCaptcha(false);
     } finally {
       setLoading(false);
     }
@@ -41,7 +89,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
           <p className="mt-5 text-sm font-black">Tài khoản demo</p>
           <div className="mt-2 grid gap-2">
             {demo.map(([mail, hint]) => (
-              <button key={mail} type="button" className={clsx("rounded-lg border p-3 text-left", email === mail ? "border-[#1d6ef0] bg-blue-50" : "border-slate-200")} onClick={() => { setEmail(mail); setPassword("password123"); }}>
+              <button key={mail} type="button" className={clsx("rounded-lg border p-3 text-left", email === mail ? "border-[#1d6ef0] bg-blue-50" : "border-slate-200")} onClick={() => { setEmail(mail); setPassword("password123"); setCaptchaAnswer(""); }}>
                 <b>{mail}</b>
                 <div className="text-xs text-slate-500">{hint}</div>
               </button>
@@ -57,9 +105,28 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
             </div>
           </div>
           <label className="mb-3 block text-sm font-bold">Email<input className="field mt-1 w-full" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-          <label className="mb-4 block text-sm font-bold">Mật khẩu<input className="field mt-1 w-full" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+          <label className="mb-3 block text-sm font-bold">Mật khẩu<input className="field mt-1 w-full" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+          <label className="mb-4 block text-sm font-bold">Mã xác nhận
+            <div className="mt-1 grid gap-2 sm:grid-cols-[auto_1fr_auto]">
+              <div className="flex h-11 min-w-32 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-4 font-mono text-lg font-black tracking-[0.28em] text-[#214b74]">
+                {captchaLoading ? <Loader2 className="animate-spin" size={18} /> : captcha?.captcha_code || "----"}
+              </div>
+              <input
+                className="field min-w-0"
+                inputMode="numeric"
+                maxLength={6}
+                pattern="[0-9]*"
+                value={captchaAnswer}
+                onChange={(e) => setCaptchaAnswer(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="Nhập mã"
+              />
+              <button type="button" className="icon-text-btn justify-center" onClick={() => void refreshCaptcha()} disabled={captchaLoading}>
+                <RefreshCcw size={16} /> Đổi mã
+              </button>
+            </div>
+          </label>
           {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
-          <button className="primary-btn w-full" disabled={loading}>{loading ? <Loader2 className="animate-spin" size={18} /> : null} Đăng nhập</button>
+          <button className="primary-btn w-full" disabled={loading || captchaLoading || !captcha}>{loading ? <Loader2 className="animate-spin" size={18} /> : null} Đăng nhập</button>
           <p className="mt-4 text-xs text-slate-500">Mật khẩu demo: password123</p>
         </form>
       </div>

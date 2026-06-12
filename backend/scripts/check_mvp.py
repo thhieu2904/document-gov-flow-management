@@ -24,7 +24,19 @@ def status(response, expected: int, label: str) -> None:
 
 
 def login(client: TestClient, email: str) -> dict[str, str]:
-    data = ok(client.post("/api/auth/login", json={"email": email, "password": PASSWORD}), f"login {email}")
+    captcha = ok(client.get("/api/auth/captcha"), f"captcha {email}")
+    data = ok(
+        client.post(
+            "/api/auth/login",
+            json={
+                "email": email,
+                "password": PASSWORD,
+                "captcha_token": captcha["captcha_token"],
+                "captcha_answer": captcha["captcha_code"],
+            },
+        ),
+        f"login {email}",
+    )
     return {"Authorization": f"Bearer {data['access_token']}"}
 
 
