@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword
+      POSTGRES_DB: document_flow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d document_flow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    expose:
+      - "8000"
+    environment:
+      - APP_ENV=local
+      - FRONTEND_URL=http://localhost
+      - DATABASE_URL=postgresql+psycopg://admin:adminpassword@postgres:5432/document_flow
+      - AUTH_PROVIDER=local
+      - STORAGE_PROVIDER=local
+      - LOCAL_STORAGE_PATH=/app/uploads
+      - JWT_SECRET_KEY=dev_local_jwt_secret_key_change_in_production
+      - JWT_EXPIRES_MINUTES=1440
+    volumes:
+      - ./backend:/app
+      - ./runtime/uploads:/app/uploads
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+    environment:
+      - VITE_API_PROXY_TARGET=http://backend:8000
+    command: sh -c "npm install && npx vite --host 0.0.0.0 --port 80"
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
