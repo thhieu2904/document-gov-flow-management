@@ -62,12 +62,14 @@ class DepartmentCreate(BaseModel):
     name: str
     description: str | None = None
     is_active: bool = True
+    manager_id: str | None = None
 
 
 class DepartmentUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     is_active: bool | None = None
+    manager_id: str | None = None
 
 
 class DepartmentTransferRequest(BaseModel):

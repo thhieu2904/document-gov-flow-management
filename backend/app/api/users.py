@@ -61,6 +61,20 @@ def normalize_payload_for_actor(db: Session, current_user: User, role: str, depa
     return role, normalize_department_for_role(db, role, department_id)
 
 
+def demote_other_department_managers(db: Session, department_id: str | None, keep_user_id: str) -> None:
+    if not department_id:
+        return
+    managers = db.scalars(
+        select(User).where(
+            User.department_id == department_id,
+            User.role == "manager",
+            User.id != keep_user_id,
+        )
+    ).all()
+    for manager in managers:
+        manager.role = "staff"
+
+
 @router.get("/users", response_model=list[UserOut])
 def list_users(
     search: str | None = None,
@@ -105,6 +119,10 @@ def create_user(
     if db.scalar(select(User).where(User.email == email)):
         raise HTTPException(status_code=409, detail="Email đã tồn tại")
     role, department_id = normalize_payload_for_actor(db, current_user, payload.role, payload.department_id)
+    if role == "manager" and department_id:
+        old_mgrs = db.scalars(select(User).where(User.department_id == department_id, User.role == "manager")).all()
+        for m in old_mgrs:
+            m.role = "staff"
     password_hash = hash_password(payload.password) if settings.auth_provider == "local" else None
     user = User(
         supabase_user_id=None,
@@ -118,6 +136,9 @@ def create_user(
         must_change_password=True,
     )
     db.add(user)
+    db.flush()
+    if user.role == "manager":
+        demote_other_department_managers(db, user.department_id, user.id)
     db.commit()
     db.refresh(user)
     if settings.email_enabled:
@@ -158,12 +179,19 @@ def update_user(user_id: str, payload: UserUpdate, db: Session = Depends(get_db)
     if "role" in changes or "department_id" in changes:
         target_role, changes["department_id"] = normalize_payload_for_actor(db, current_user, target_role, changes.get("department_id", user.department_id))
         changes["role"] = target_role
+        if target_role == "manager" and changes["department_id"]:
+            old_mgrs = db.scalars(select(User).where(User.department_id == changes["department_id"], User.role == "manager")).all()
+            for m in old_mgrs:
+                if m.id != user.id:
+                    m.role = "staff"
     password = changes.pop("password", None)
     if password:
         get_auth_provider().update_password(db, user, password)
         user.must_change_password = True
     for key, value in changes.items():
         setattr(user, key, value)
+    if user.role == "manager":
+        demote_other_department_managers(db, user.department_id, user.id)
     db.commit()
     db.refresh(user)
     return user

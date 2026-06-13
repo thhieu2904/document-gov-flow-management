@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.py[cod]
 .env
 backend/.env
@@ -8,6 +8,8 @@ document-flow.db-journal
 *.sqlite3
 storage/
 data/
+runtime/
+backups/
 .conda-env/
 .conda-pkgs/
 .pip-cache/

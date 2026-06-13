@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, KeyRound, Lock, Pencil, Plus, Search, Unlock, UsersRound } from "lucide-react";
 import { api, errorMessage } from "../api";
 import { labels } from "../labels";
@@ -12,14 +12,32 @@ function departmentName(departments: Department[], user: User) {
   return departments.find((item) => item.id === user.department_id)?.name || "-";
 }
 
-export function UsersView({ users, departments, currentUser, onChanged }: { users: User[]; departments: Department[]; currentUser: User; onChanged: () => Promise<void> }) {
+export function UsersView({
+  users,
+  departments,
+  currentUser,
+  onChanged,
+  initialDepartmentId = "all",
+  onClearInitialDepartment
+}: {
+  users: User[];
+  departments: Department[];
+  currentUser: User;
+  onChanged: () => Promise<void>;
+  initialDepartmentId?: string;
+  onClearInitialDepartment?: () => void;
+}) {
   const [modal, setModal] = useState<UserModalState | null>(null);
   const [resetUser, setResetUser] = useState<User | null>(null);
   const [search, setSearch] = useState("");
   const [role, setRole] = useState<"all" | Role>("all");
-  const [department, setDepartment] = useState("all");
+  const [department, setDepartment] = useState(initialDepartmentId);
   const [status, setStatus] = useState<"all" | "active" | "locked">("all");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setDepartment(initialDepartmentId);
+  }, [initialDepartmentId]);
   const activeDepartments = departments.filter((item) => item.is_active);
 
   async function setUserActive(user: User, isActive: boolean) {
@@ -42,9 +60,38 @@ export function UsersView({ users, departments, currentUser, onChanged }: { user
     return true;
   }), [users, search, role, department, status]);
 
+  const stats = useMemo(() => {
+    const total = users.length;
+    const managers = users.filter((u) => u.role === "manager").length;
+    const staff = users.filter((u) => u.role === "staff").length;
+    const active = users.filter((u) => u.is_active).length;
+    return { total, managers, staff, active };
+  }, [users]);
+
   return (
     <section>
       <PageTitle title="Người dùng" desc="Quản lý tài khoản nhân viên, trạng thái và mật khẩu tạm." action={<button className="primary-btn" onClick={() => setModal({ mode: "create" })}><Plus size={16} /> Thêm người dùng</button>} />
+      
+      {/* Thẻ thống kê nhanh */}
+      <div className="mb-4 grid grid-cols-4 gap-4">
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Tổng tài khoản</div>
+          <div className="mt-2 text-2xl font-black text-slate-900">{stats.total}</div>
+        </div>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="text-xs font-bold uppercase tracking-wider text-blue-500">Quản lý (Trưởng phòng)</div>
+          <div className="mt-2 text-2xl font-black text-blue-700">{stats.managers}</div>
+        </div>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="text-xs font-bold uppercase tracking-wider text-emerald-500">Nhân viên (Staff)</div>
+          <div className="mt-2 text-2xl font-black text-emerald-700">{stats.staff}</div>
+        </div>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="text-xs font-bold uppercase tracking-wider text-teal-500">Đang hoạt động</div>
+          <div className="mt-2 text-2xl font-black text-teal-700">{stats.active}</div>
+        </div>
+      </div>
+
       {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
       <div className="mb-4 rounded-lg border bg-white p-3">
         <div className="mb-2 flex gap-2">
@@ -64,20 +111,70 @@ export function UsersView({ users, departments, currentUser, onChanged }: { user
             <tbody>
               {filtered.map((u) => (
                 <tr key={u.id} className="border-b hover:bg-blue-50">
-                  <td className="px-3 py-3 font-bold" onClick={() => setModal({ mode: "edit", user: u })}>{u.full_name}<div className="text-xs font-normal text-slate-500">{u.email}</div></td>
-                  <td className="px-3 py-3">{labels.role[u.role]}</td>
+                  <td className="px-3 py-3 font-bold cursor-pointer hover:underline text-[#214b74]" onClick={() => setModal({ mode: "edit", user: u })}>{u.full_name}<div className="text-xs font-normal text-slate-500">{u.email}</div></td>
+                  <td className="px-3 py-3">
+                    {u.role === "superadmin" ? (
+                      <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-700 border border-rose-200">
+                        Admin hệ thống
+                      </span>
+                    ) : u.role === "manager" ? (
+                      <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700 border border-blue-200">
+                        Quản lý
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700 border border-slate-200">
+                        Nhân viên
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-3">{departmentName(departments, u)}</td>
                   <td className="px-3 py-3">{u.position_label || "-"}</td>
-                  <td className="px-3 py-3">{u.is_active ? "Đang hoạt động" : "Tạm khóa"}</td>
                   <td className="px-3 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      <button className="icon-text-btn" onClick={() => setModal({ mode: "edit", user: u })}><Pencil size={15} /> Sửa</button>
+                    {u.is_active ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-200">
+                        Hoạt động
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-600 border border-rose-100">
+                        Tạm khóa
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-1">
+                      <button 
+                        className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-colors" 
+                        onClick={() => setModal({ mode: "edit", user: u })}
+                        title="Chỉnh sửa thông tin"
+                      >
+                        <Pencil size={17} />
+                      </button>
                       {u.id !== currentUser.id ? (
-                        u.is_active
-                          ? <button className="icon-text-btn text-amber-700" onClick={() => setUserActive(u, false)}><Lock size={15} /> Khóa</button>
-                          : <button className="icon-text-btn text-emerald-700" onClick={() => setUserActive(u, true)}><Unlock size={15} /> Mở khóa</button>
+                        u.is_active ? (
+                          <button 
+                            className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 hover:text-amber-700 transition-colors" 
+                            onClick={() => setUserActive(u, false)}
+                            title="Khóa tài khoản"
+                          >
+                            <Lock size={17} />
+                          </button>
+                        ) : (
+                          <button 
+                            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors" 
+                            onClick={() => setUserActive(u, true)}
+                            title="Mở khóa tài khoản"
+                          >
+                            <Unlock size={17} />
+                          </button>
+                        )
                       ) : null}
-                      <button className="icon-text-btn" onClick={() => setResetUser(u)}><KeyRound size={15} /> Reset</button>
+                      <button 
+                        className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors" 
+                        onClick={() => setResetUser(u)}
+                        title="Đặt lại mật khẩu tạm"
+                      >
+                        <KeyRound size={17} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -181,8 +278,19 @@ function UserModal({ state, currentUser, departments, onClose, onDone }: { state
               </div>
             </label>
           ) : null}
-          {role !== "superadmin" ? <label className="text-sm font-bold">Phòng ban *<select className="field mt-1 w-full" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} required disabled={!canEditRoles}><option value="">Chọn phòng ban</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label> : <div className="rounded-lg bg-blue-50 p-3 text-sm font-bold text-[#214b74]">Superadmin có quyền toàn hệ thống, không gắn phòng ban.</div>}
-          <label className="text-sm font-bold">Chức vụ<input className="field mt-1 w-full" value={positionLabel} onChange={(e) => setPositionLabel(e.target.value)} /></label>
+          {role !== "superadmin" ? (
+            <label className="text-sm font-bold">
+              Phòng ban *
+              <select className="field mt-1 w-full" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} required disabled={!canEditRoles}>
+                <option value="">Chọn phòng ban</option>
+                {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </label>
+          ) : null}
+          <label className={role === "superadmin" ? "col-span-2 text-sm font-bold" : "text-sm font-bold"}>
+            Chức vụ
+            <input className="field mt-1 w-full" value={positionLabel} onChange={(e) => setPositionLabel(e.target.value)} />
+          </label>
           {editing ? <label className="col-span-2 flex items-center gap-2 rounded-lg border p-3 text-sm font-bold"><input type="checkbox" disabled={user?.id === currentUser.id} checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Trạng thái: {isActive ? "Đang hoạt động" : "Tạm khóa"}</label> : null}
         </div>
         <div className="mt-5 flex justify-end gap-2"><button type="button" className="icon-text-btn" onClick={onClose}>Hủy</button><button className="primary-btn"><Plus size={16} /> {editing ? "Lưu" : "Thêm"}</button></div>

@@ -10,10 +10,49 @@ from app.schemas import DepartmentCreate, DepartmentTransferRequest, DepartmentU
 router = APIRouter(prefix="/departments", tags=["departments"])
 
 
+def validate_department_manager(db: Session, manager_id: str | None, department_id: str) -> User | None:
+    if not manager_id:
+        return None
+    manager = db.get(User, manager_id)
+    if not manager or not manager.is_active:
+        raise HTTPException(status_code=400, detail="Người quản lý được chọn không hợp lệ hoặc đã bị khóa")
+    if manager.role == "superadmin":
+        raise HTTPException(status_code=400, detail="Không thể gán superadmin làm trưởng phòng")
+    if manager.department_id and manager.department_id != department_id:
+        raise HTTPException(status_code=400, detail="Người quản lý phải đang thuộc phòng ban này. Vui lòng chuyển nhân viên trước khi gán trưởng phòng.")
+    return manager
+
+
+def set_department_manager(db: Session, department_id: str, manager: User | None) -> None:
+    old_managers = db.scalars(
+        select(User).where(User.department_id == department_id, User.role == "manager")
+    ).all()
+    for old_manager in old_managers:
+        if not manager or old_manager.id != manager.id:
+            old_manager.role = "staff"
+    if manager:
+        manager.role = "manager"
+        manager.department_id = department_id
+
+
 def department_dict(db: Session, dept: Department) -> dict:
     member_count = db.scalar(select(func.count(User.id)).where(User.department_id == dept.id, User.role != "superadmin")) or 0
     active_member_count = db.scalar(select(func.count(User.id)).where(User.department_id == dept.id, User.role != "superadmin", User.is_active.is_(True))) or 0
     document_count = db.scalar(select(func.count(Document.id)).where(Document.department_id == dept.id)) or 0
+    
+    manager = db.scalar(
+        select(User).where(
+            User.department_id == dept.id,
+            User.role == "manager",
+            User.is_active.is_(True)
+        )
+    )
+    manager_info = {
+        "id": manager.id,
+        "full_name": manager.full_name,
+        "email": manager.email
+    } if manager else None
+
     return {
         "id": dept.id,
         "name": dept.name,
@@ -22,6 +61,7 @@ def department_dict(db: Session, dept: Department) -> dict:
         "member_count": member_count,
         "active_member_count": active_member_count,
         "document_count": document_count,
+        "manager": manager_info,
         "created_at": dept.created_at,
         "updated_at": dept.updated_at,
     }
@@ -52,6 +92,9 @@ def list_departments(
 def create_department(payload: DepartmentCreate, db: Session = Depends(get_db), current_user: User = Depends(require_superadmin)):
     dept = Department(name=payload.name.strip(), description=payload.description, is_active=True)
     db.add(dept)
+    db.flush()
+    manager = validate_department_manager(db, payload.manager_id, dept.id)
+    set_department_manager(db, dept.id, manager)
     db.commit()
     db.refresh(dept)
     return department_dict(db, dept)
@@ -68,9 +111,15 @@ def update_department(
     if not dept:
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
     for key, value in payload.model_dump(exclude_unset=True).items():
-        if key == "is_active":
+        if key in ("is_active", "manager_id"):
             continue
         setattr(dept, key, value)
+        
+    changes = payload.model_dump(exclude_unset=True)
+    if "manager_id" in changes:
+        manager = validate_department_manager(db, changes["manager_id"], dept.id)
+        set_department_manager(db, dept.id, manager)
+                
     db.commit()
     db.refresh(dept)
     return department_dict(db, dept)
@@ -113,6 +162,8 @@ def transfer_department_users(department_id: str, payload: DepartmentTransferReq
         raise HTTPException(status_code=400, detail="Phòng ban nguồn và đích phải khác nhau")
     users = db.scalars(select(User).where(User.department_id == source.id, User.role != "superadmin", User.is_active.is_(True))).all()
     for user in users:
+        if user.role == "manager":
+            user.role = "staff"
         user.department_id = target.id
     db.commit()
     return {"transferred": len(users), "source": department_dict(db, source), "target": department_dict(db, target)}

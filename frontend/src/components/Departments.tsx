@@ -10,7 +10,17 @@ function activeStaff(users: User[], departmentId: string) {
   return users.filter((u) => u.role !== "superadmin" && u.is_active && u.department_id === departmentId);
 }
 
-export function DepartmentsView({ departments, users, onChanged }: { departments: Department[]; users: User[]; onChanged: () => Promise<void> }) {
+export function DepartmentsView({
+  departments,
+  users,
+  onChanged,
+  onViewUsers
+}: {
+  departments: Department[];
+  users: User[];
+  onChanged: () => Promise<void>;
+  onViewUsers: (departmentId: string) => void;
+}) {
   const [modal, setModal] = useState<DepartmentModalState | null>(null);
   const [transfer, setTransfer] = useState<Department | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
@@ -55,20 +65,58 @@ export function DepartmentsView({ departments, users, onChanged }: { departments
       <Panel title="Danh sách phòng ban" icon={<Building2 size={18} />}>
         <div className="thin-scrollbar overflow-auto">
           <table className="w-full min-w-[940px] text-sm">
-            <thead><tr className="bg-[#214b74] text-left text-xs uppercase text-white"><th className="px-3 py-3">Tên phòng ban</th><th className="px-3 py-3">Mô tả</th><th className="px-3 py-3">Nhân viên</th><th className="px-3 py-3">Văn bản</th><th className="px-3 py-3">Trạng thái</th><th className="px-3 py-3">Thao tác</th></tr></thead>
+            <thead><tr className="bg-[#214b74] text-left text-xs uppercase text-white"><th className="px-3 py-3">Tên phòng ban</th><th className="px-3 py-3">Mô tả</th><th className="px-3 py-3">Người quản lý</th><th className="px-3 py-3">Nhân viên</th><th className="px-3 py-3">Văn bản</th><th className="px-3 py-3">Trạng thái</th><th className="px-3 py-3">Thao tác</th></tr></thead>
             <tbody>
               {filtered.map((d) => (
-                <tr key={d.id} className="border-b hover:bg-blue-50">
-                  <td className="px-3 py-3 font-bold" onClick={() => setModal({ mode: "edit", department: d })}>{d.name}</td>
+                <tr key={d.id} className="border-b hover:bg-blue-50 cursor-pointer" onClick={() => onViewUsers(d.id)}>
+                  <td className="px-3 py-3 font-bold text-[#214b74]">{d.name}</td>
                   <td className="px-3 py-3">{d.description || "-"}</td>
-                  <td className="px-3 py-3">{d.active_member_count ?? activeStaff(users, d.id).length}</td>
+                  <td className="px-3 py-3">
+                    {d.manager ? (
+                      <div>
+                        <div className="font-bold">{d.manager.full_name}</div>
+                        <div className="text-xs text-slate-500">{d.manager.email}</div>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 italic">Chưa gán</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 font-bold">{d.active_member_count ?? activeStaff(users, d.id).length}</td>
                   <td className="px-3 py-3">{d.document_count ?? "-"}</td>
                   <td className="px-3 py-3">{d.is_active ? "Đang sử dụng" : "Đã xóa"}</td>
-                  <td className="px-3 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <button className="icon-text-btn" onClick={() => setModal({ mode: "edit", department: d })}><Pencil size={15} /> Sửa</button>
-                      <button className="icon-text-btn" onClick={() => setTransfer(d)}><ArrowRightLeft size={15} /> Chuyển</button>
-                      {d.is_active ? <button className="icon-text-btn" onClick={() => softDelete(d)}><Trash2 size={15} /> Xóa</button> : <button className="icon-text-btn" onClick={() => restore(d)}><RotateCcw size={15} /> Khôi phục</button>}
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1">
+                      <button 
+                        className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-colors" 
+                        onClick={() => setModal({ mode: "edit", department: d })}
+                        title="Chỉnh sửa phòng ban"
+                      >
+                        <Pencil size={17} />
+                      </button>
+                      <button 
+                        className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors" 
+                        onClick={() => setTransfer(d)}
+                        title="Chuyển nhân viên"
+                      >
+                        <ArrowRightLeft size={17} />
+                      </button>
+                      {d.is_active ? (
+                        <button 
+                          className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors" 
+                          onClick={() => softDelete(d)}
+                          title="Xóa phòng ban (Xóa mềm)"
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      ) : (
+                        <button 
+                          className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors" 
+                          onClick={() => restore(d)}
+                          title="Khôi phục phòng ban"
+                        >
+                          <RotateCcw size={17} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -78,24 +126,37 @@ export function DepartmentsView({ departments, users, onChanged }: { departments
           {!filtered.length ? <Empty text="Không có phòng ban phù hợp." /> : null}
         </div>
       </Panel>
-      {modal ? <DepartmentModal state={modal} onClose={() => setModal(null)} onDone={async () => { setModal(null); await onChanged(); }} /> : null}
+      {modal ? <DepartmentModal state={modal} users={users} onClose={() => setModal(null)} onDone={async () => { setModal(null); await onChanged(); }} /> : null}
       {transfer ? <TransferModal department={transfer} users={users} departments={departments.filter((d) => d.is_active && d.id !== transfer.id)} onClose={() => setTransfer(null)} onDone={async () => { setTransfer(null); await onChanged(); }} /> : null}
       {alert ? <SystemModal title="Không thể xóa phòng ban" onClose={() => setAlert(null)} action={<button className="primary-btn" onClick={() => setAlert(null)}>Đã hiểu</button>}><p>{alert}</p></SystemModal> : null}
     </section>
   );
 }
 
-function DepartmentModal({ state, onClose, onDone }: { state: DepartmentModalState; onClose: () => void; onDone: () => Promise<void> }) {
+function DepartmentModal({ state, users, onClose, onDone }: { state: DepartmentModalState; users: User[]; onClose: () => void; onDone: () => Promise<void> }) {
   const department = state.mode === "edit" ? state.department : null;
   const [name, setName] = useState(department?.name || "");
   const [description, setDescription] = useState(department?.description || "");
+  const [managerId, setManagerId] = useState(department?.manager?.id || "");
   const [error, setError] = useState("");
+
+  const eligibleUsers = useMemo(() => {
+    return users.filter((u) => {
+      if (!u.is_active || u.role === "superadmin") return false;
+      if (department) return u.department_id === department.id;
+      return !u.department_id;
+    });
+  }, [department, users]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     try {
-      const payload = { name: name.trim(), description: description.trim() || null };
+      const payload = { 
+        name: name.trim(), 
+        description: description.trim() || null,
+        manager_id: managerId || null
+      };
       if (state.mode === "create") await api<Department>("/departments", { method: "POST", body: JSON.stringify(payload) });
       else await api<Department>(`/departments/${state.department.id}`, { method: "PATCH", body: JSON.stringify(payload) });
       await onDone();
@@ -111,6 +172,16 @@ function DepartmentModal({ state, onClose, onDone }: { state: DepartmentModalSta
         {error ? <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
         <label className="mb-3 block text-sm font-bold">Tên phòng ban *<input className="field mt-1 w-full" value={name} onChange={(e) => setName(e.target.value)} required /></label>
         <label className="mb-3 block text-sm font-bold">Mô tả<textarea className="field mt-1 min-h-24 w-full" value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+        <label className="mb-3 block text-sm font-bold">
+          Người quản lý (Trưởng phòng)
+          <select className="field mt-1 w-full" value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+            <option value="">-- Chưa gán / Không có --</option>
+            {eligibleUsers.map((u) => (
+              <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+            ))}
+            {!eligibleUsers.length ? <option disabled>Không có người dùng phù hợp</option> : null}
+          </select>
+        </label>
         <div className="mt-5 flex justify-end gap-2"><button type="button" className="icon-text-btn" onClick={onClose}>Hủy</button><button className="primary-btn"><Plus size={16} /> Lưu</button></div>
       </form>
     </div>

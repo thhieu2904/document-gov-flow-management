@@ -25,6 +25,7 @@ export type Department = {
   member_count?: number;
   active_member_count?: number;
   document_count?: number;
+  manager?: { id: string; full_name: string; email: string } | null;
 };
 
 export type KpiIndicator = {

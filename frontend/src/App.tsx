@@ -27,6 +27,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [passwordModal, setPasswordModal] = useState(false);
   const [profileModal, setProfileModal] = useState(false);
+  const [userFilterDepartmentId, setUserFilterDepartmentId] = useState("all");
 
   async function bootstrap() {
     if (!localStorage.getItem("simple_doc_token")) return;
@@ -83,7 +84,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <Header user={currentUser} view={view} onChange={setView} />
       <div className="app-shell">
-        <Sidebar user={currentUser} view={view} onChange={setView} onLogout={logout} onOpenProfile={() => setProfileModal(true)} />
+        <Sidebar user={currentUser} view={view} onChange={(nextView) => { if (nextView === "users") setUserFilterDepartmentId("all"); setView(nextView); }} onLogout={logout} onOpenProfile={() => setProfileModal(true)} />
         <main className="min-w-0 flex-1 p-5">
           {notice ? <div className="mb-4 flex justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-[#214b74]">{notice}<button onClick={() => setNotice("")}>Đóng</button></div> : null}
           {view === "dashboard" ? <DashboardView user={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} onNavigate={setView} /> : null}
@@ -92,8 +93,8 @@ export default function App() {
           {view === "assigned_completed" ? <DocumentsView key="assigned_completed" scope="my_tasks" title="Việc đã duyệt" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} initialStatuses={["completed", "completed_late"]} /> : null}
           {view === "all_documents" ? <DocumentsView key="all_documents" scope="assigned_by_me" title="Tất cả văn bản" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} /> : null}
           {view === "completed_documents" ? <DocumentsView key="completed_documents" scope="assigned_by_me" title="Văn bản đã hoàn tất" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} initialStatuses={["completed", "completed_late"]} /> : null}
-          {view === "users" ? <UsersView users={users} departments={departments} currentUser={currentUser} onChanged={refreshReference} /> : null}
-          {view === "departments" && currentUser.role === "superadmin" ? <DepartmentsView departments={departments} users={users} onChanged={refreshReference} /> : null}
+          {view === "users" ? <UsersView users={users} departments={departments} currentUser={currentUser} onChanged={refreshReference} initialDepartmentId={userFilterDepartmentId} onClearInitialDepartment={() => setUserFilterDepartmentId("all")} /> : null}
+          {view === "departments" && currentUser.role === "superadmin" ? <DepartmentsView departments={departments} users={users} onChanged={refreshReference} onViewUsers={(deptId) => { setUserFilterDepartmentId(deptId); setView("users"); }} /> : null}
           {view === "reminders" ? <RemindersView /> : null}
           {view === "kpi_input" ? <KpiInputView currentUser={currentUser} /> : null}
           {view === "kpi_display" ? <KpiDisplayView /> : null}

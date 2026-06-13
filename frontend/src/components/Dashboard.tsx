@@ -75,17 +75,38 @@ function matchesHighlight(item: DashboardDocument, highlightKey: HighlightKey) {
 }
 
 function highlightRowClass(item: DashboardDocument, highlightKey: HighlightKey) {
-  if (!matchesHighlight(item, highlightKey)) return "hover:bg-slate-50";
-  if (highlightKey === "overdue") return "border-l-4 border-l-red-500 bg-red-50/70 hover:bg-red-100";
-  if (highlightKey === "due_soon") return "border-l-4 border-l-blue-500 bg-blue-50/80 hover:bg-blue-100";
-  if (highlightKey === "in_progress") return "border-l-4 border-l-amber-500 bg-amber-50/70 hover:bg-amber-100";
-  if (highlightKey === "draft") return "border-l-4 border-l-slate-400 bg-slate-50 hover:bg-slate-100";
-  if (highlightKey === "open") return "border-l-4 border-l-blue-500 bg-blue-50/70 hover:bg-blue-100";
-  return "hover:bg-blue-50";
+  if (item.display_status === "overdue") return "border-l-4 border-l-red-500 hover:bg-slate-50";
+  if (item.display_status === "due_soon") return "border-l-4 border-l-blue-500 hover:bg-slate-50";
+  if (item.display_status === "in_progress") return "border-l-4 border-l-amber-500 hover:bg-slate-50";
+  if (item.display_status === "draft") return "border-l-4 border-l-slate-400 hover:bg-slate-50";
+  return "hover:bg-slate-50";
+}
+
+function getActionCta(doc: DashboardDocument, user: User) {
+  if (user.role === "superadmin" || user.role === "manager") {
+    if (doc.status === "draft") {
+      return <span className="inline-flex items-center gap-1 font-extrabold text-slate-500 hover:text-slate-700">Giao việc</span>;
+    }
+    if (doc.status === "submitted") {
+      return <span className="inline-flex items-center gap-1 font-extrabold text-emerald-600 hover:text-emerald-700">Duyệt ngay</span>;
+    }
+    return <span className="inline-flex items-center gap-1 font-extrabold text-[#214b74] hover:underline">Xem chi tiết</span>;
+  } else {
+    const myAssignment = doc.assignees.find((a) => a.name === user.full_name);
+    const status = myAssignment?.status;
+    if (status === "pending") {
+      return <span className="inline-flex items-center gap-1 font-extrabold text-[#1d6ef0] hover:text-[#185cc8] hover:underline">Nhận việc</span>;
+    }
+    if (status === "in_progress" || status === "returned") {
+      return <span className="inline-flex items-center gap-1 font-extrabold text-amber-600 hover:text-amber-700 hover:underline">Nộp kết quả</span>;
+    }
+    return <span className="inline-flex items-center gap-1 font-extrabold text-[#214b74] hover:underline">Xem chi tiết</span>;
+  }
 }
 
 function WorkGrid({
   items,
+  user,
   sortBy,
   sortDir,
   highlightKey,
@@ -93,6 +114,7 @@ function WorkGrid({
   onOpen,
 }: {
   items: DashboardDocument[];
+  user: User;
   sortBy: SortKey;
   sortDir: SortDir;
   highlightKey: HighlightKey;
@@ -112,6 +134,7 @@ function WorkGrid({
             <SortHead label="Tiến độ" field="progress" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
             <SortHead label="Trạng thái" field="status" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
             <SortHead label="Ưu tiên" field="priority" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+            <th className="px-3 py-3">Thao tác</th>
           </tr>
         </thead>
         <tbody>
@@ -125,6 +148,7 @@ function WorkGrid({
               <td className="px-3 py-3 font-bold">{doc.completed_count}/{doc.assignment_count}</td>
               <td className="px-3 py-3"><Status status={doc.display_status} /></td>
               <td className="px-3 py-3"><Priority p={doc.priority} /></td>
+              <td className="px-3 py-3">{getActionCta(doc, user)}</td>
             </tr>
           ))}
         </tbody>
@@ -216,8 +240,12 @@ export function DashboardView({ user, users, departments, onOpen, onChanged, onN
     if (selectedStat.value === 0 || selectedHighlightCount === 0) {
       return `Không có ${selectedStat.label.toLowerCase()} trong kỳ đang chọn.`;
     }
-    return `${selectedHighlightCount} mục ${selectedStat.label.toLowerCase()} đang được tô màu trong bảng bên dưới.`;
+    return `${selectedHighlightCount} mục ${selectedStat.label.toLowerCase()} đang được hiển thị trong bảng bên dưới.`;
   })();
+
+  const filteredWorkItems = highlightKey === "all"
+    ? data.work_items
+    : data.work_items.filter((item) => matchesHighlight(item, highlightKey));
 
   function handleStatClick(item: DashboardStat) {
     setSelectedStatLabel(item.label);
@@ -269,7 +297,7 @@ export function DashboardView({ user, users, departments, onOpen, onChanged, onN
       </div>
       <Panel title="Văn bản cần xử lý" icon={<ListChecks size={18} />}>
         {selectedStatText ? <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-bold text-[#214b74]">{selectedStatText}</p> : null}
-        <WorkGrid items={data.work_items} sortBy={sortBy} sortDir={sortDir} highlightKey={highlightKey} onSort={toggleSort} onOpen={onOpen} />
+        <WorkGrid items={filteredWorkItems} user={user} sortBy={sortBy} sortDir={sortDir} highlightKey={highlightKey} onSort={toggleSort} onOpen={onOpen} />
       </Panel>
       {creating ? <DocumentModal currentUser={user} users={users} departments={departments} onClose={() => setCreating(false)} onDone={async () => { setCreating(false); await load(); await onChanged?.(); }} /> : null}
     </section>
