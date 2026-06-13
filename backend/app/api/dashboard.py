@@ -43,13 +43,13 @@ def derived_status(doc: Document) -> str:
         return "overdue"
     if doc.due_at and doc.due_at <= now_utc() + timedelta(days=3):
         return "due_soon"
-    if doc.status == "draft":
-        return "draft"
+    if doc.status in {"draft", "submitted"}:
+        return doc.status
     return "in_progress"
 
 
 def doc_item(doc: Document, assignments: list[DocumentAssignment]) -> dict:
-    completed_count = len([item for item in assignments if item.status == "completed"])
+    completed_count = len([item for item in assignments if item.status == "approved"])
     return {
         "id": doc.id,
         "code": doc.code,
@@ -109,20 +109,25 @@ def dashboard(
 ):
     start, end = period_bounds(period, anchor_date)
     query = select(Document).order_by(Document.due_at.asc().nulls_last(), Document.updated_at.desc())
-    if current_user.role != "manager":
+    if current_user.role == "manager":
+        if current_user.department_id:
+            query = query.where(Document.department_id == current_user.department_id)
+        else:
+            query = query.where(False)
+    elif current_user.role != "superadmin":
         query = query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == current_user.id)))
     all_docs = db.scalars(query).all()
     docs = [doc for doc in all_docs if in_period(doc, start, end)]
     by_doc = document_assignments_map(db, [doc.id for doc in docs])
     
-    if current_user.role == "manager":
+    if current_user.role in {"superadmin", "manager"}:
         work_items = [doc_item(doc, by_doc.get(doc.id, [])) for doc in docs if doc.status != "completed"]
     else:
         work_items = []
         for doc in docs:
             assignments = by_doc.get(doc.id, [])
             my_assignment = next((a for a in assignments if a.assignee_id == current_user.id), None)
-            if my_assignment and my_assignment.status != "completed":
+            if my_assignment and my_assignment.status in {"pending", "in_progress", "returned"}:
                 work_items.append(doc_item(doc, assignments))
     work_items = sort_work_items(work_items, sort_by, sort_dir)
 
@@ -131,11 +136,11 @@ def dashboard(
     in_progress_count = len([item for item in work_items if item["display_status"] == "in_progress"])
     draft_count = len([item for item in work_items if item["display_status"] == "draft"])
     period_assignments = [item for items in by_doc.values() for item in items]
-    if current_user.role == "manager":
+    if current_user.role in {"superadmin", "manager"}:
         completed_count = len([doc for doc in docs if doc.status == "completed"])
     else:
         period_assignments = [item for item in period_assignments if item.assignee_id == current_user.id]
-        completed_count = len([item for item in period_assignments if item.status == "completed"])
+        completed_count = len([item for item in period_assignments if item.status == "approved"])
 
     return {
         "total_documents": len(docs),
@@ -145,7 +150,7 @@ def dashboard(
         "due_soon_documents": due_soon_count,
         "overdue_documents": overdue_count,
         "completed_documents": completed_count,
-        "open_tasks": len([item for item in period_assignments if item.status in ["pending", "in_progress"]]),
-        "overdue_tasks": len([item for item in period_assignments if item.status in ["pending", "in_progress"] and item.due_at and item.due_at < now_utc()]),
+        "open_tasks": len([item for item in period_assignments if item.status in ["pending", "in_progress", "returned", "submitted"]]),
+        "overdue_tasks": len([item for item in period_assignments if item.status in ["pending", "in_progress", "returned"] and item.due_at and item.due_at < now_utc()]),
         "work_items": work_items,
     }

@@ -48,7 +48,9 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    if (currentUser?.role === "staff" && (view === "users" || view === "departments" || view === "all_documents" || view === "completed_documents" || view === "reminders" || view === "kpi_input")) setView("dashboard");
+    const isAdmin = currentUser?.role === "superadmin" || currentUser?.role === "manager";
+    if (!isAdmin && (view === "users" || view === "departments" || view === "all_documents" || view === "completed_documents" || view === "reminders" || view === "kpi_input")) setView("dashboard");
+    if (currentUser?.role === "manager" && view === "departments") setView("dashboard");
   }, [currentUser?.role, view]);
 
   useEffect(() => {
@@ -73,7 +75,8 @@ export default function App() {
     return <Login onLoggedIn={(nextToken) => { localStorage.setItem("simple_doc_token", nextToken); setToken(nextToken); }} />;
   }
 
-  const assignedScope = currentUser.role === "manager" ? "assigned_by_me" : "my_tasks";
+  const isAdmin = currentUser.role === "superadmin" || currentUser.role === "manager";
+  const assignedScope = isAdmin ? "assigned_by_me" : "my_tasks";
   const logout = () => { localStorage.removeItem("simple_doc_token"); setToken(null); setCurrentUser(null); };
 
   return (
@@ -84,13 +87,13 @@ export default function App() {
         <main className="min-w-0 flex-1 p-5">
           {notice ? <div className="mb-4 flex justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-[#214b74]">{notice}<button onClick={() => setNotice("")}>Đóng</button></div> : null}
           {view === "dashboard" ? <DashboardView user={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} onNavigate={setView} /> : null}
-          {view === "assigned" ? <DocumentsView key="assigned" scope={assignedScope} title={currentUser.role === "manager" ? "Văn bản xử lý chính" : "Tất cả việc được giao"} mode={currentUser.role === "manager" ? "period" : "all"} currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} /> : null}
+          {view === "assigned" ? <DocumentsView key="assigned" scope={assignedScope} title={isAdmin ? "Văn bản xử lý chính" : "Tất cả việc được giao"} mode={isAdmin ? "period" : "all"} currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} /> : null}
           {view === "assigned_pending" ? <DocumentsView key="assigned_pending" scope="my_tasks" title="Việc cần xử lý" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} initialStatuses={["open"]} /> : null}
-          {view === "assigned_completed" ? <DocumentsView key="assigned_completed" scope="my_tasks" title="Việc đã hoàn tất" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} initialStatuses={["completed", "completed_late"]} /> : null}
+          {view === "assigned_completed" ? <DocumentsView key="assigned_completed" scope="my_tasks" title="Việc đã duyệt" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} initialStatuses={["completed", "completed_late"]} /> : null}
           {view === "all_documents" ? <DocumentsView key="all_documents" scope="assigned_by_me" title="Tất cả văn bản" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} /> : null}
           {view === "completed_documents" ? <DocumentsView key="completed_documents" scope="assigned_by_me" title="Văn bản đã hoàn tất" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} initialStatuses={["completed", "completed_late"]} /> : null}
           {view === "users" ? <UsersView users={users} departments={departments} currentUser={currentUser} onChanged={refreshReference} /> : null}
-          {view === "departments" ? <DepartmentsView departments={departments} users={users} onChanged={refreshReference} /> : null}
+          {view === "departments" && currentUser.role === "superadmin" ? <DepartmentsView departments={departments} users={users} onChanged={refreshReference} /> : null}
           {view === "reminders" ? <RemindersView /> : null}
           {view === "kpi_input" ? <KpiInputView currentUser={currentUser} /> : null}
           {view === "kpi_display" ? <KpiDisplayView /> : null}

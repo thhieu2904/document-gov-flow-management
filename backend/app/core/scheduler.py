@@ -31,7 +31,7 @@ async def _run_staff_job() -> None:
 async def _run_digest_job() -> None:
     session_factory = get_session_local()
     with session_factory() as db:
-        manager = db.scalar(select(User).where(User.role == "manager", User.is_active.is_(True)).order_by(User.created_at))
+        manager = db.scalar(select(User).where(User.role.in_(["manager", "superadmin"]), User.is_active.is_(True)).order_by(User.created_at))
         if manager:
             await run_manager_digest(db, manager, dry_run=False)
 
@@ -39,7 +39,7 @@ async def _run_digest_job() -> None:
 async def _run_report_job(kind: str) -> None:
     session_factory = get_session_local()
     with session_factory() as db:
-        manager = db.scalar(select(User).where(User.role == "manager", User.is_active.is_(True)).order_by(User.created_at))
+        manager = db.scalar(select(User).where(User.role.in_(["manager", "superadmin"]), User.is_active.is_(True)).order_by(User.created_at))
         if manager:
             await run_manager_report(db, manager, kind, dry_run=False)
 

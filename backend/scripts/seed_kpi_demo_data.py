@@ -19,9 +19,9 @@ DEMO_DEPARTMENTS = [
 
 
 def ensure_manager(db) -> User:
-    manager = db.scalar(select(User).where(User.role == "manager", User.is_active.is_(True)).order_by(User.created_at))
+    manager = db.scalar(select(User).where(User.role.in_(["manager", "superadmin"]), User.is_active.is_(True)).order_by(User.created_at))
     if not manager:
-        raise RuntimeError("Không tìm thấy tài khoản manager đang hoạt động để gán created_by cho kỳ KPI.")
+        raise RuntimeError("Không tìm thấy tài khoản quản trị đang hoạt động để gán created_by cho kỳ KPI.")
     return manager
 
 

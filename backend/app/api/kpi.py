@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_manager
+from app.core.deps import get_current_user, require_admin
 from app.kpi_utils import KPI_STATUS_LABELS, KPI_STATUS_ORDER, build_kpi_report_text, classify_kpi_status
 from app.models import Department, KpiIndicator, KpiPeriod, KpiResult, User
 from app.schemas import KpiIndicatorCreate, KpiIndicatorUpdate, KpiPeriodCreate, KpiPeriodUpdate, KpiResultBatch
@@ -103,7 +103,7 @@ def list_indicators(
 
 
 @router.post("/indicators", status_code=201)
-def create_indicator(payload: KpiIndicatorCreate, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def create_indicator(payload: KpiIndicatorCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     require_department(db, payload.department_id)
     indicator = KpiIndicator(
         number=payload.number,
@@ -123,7 +123,7 @@ def update_indicator(
     indicator_id: str,
     payload: KpiIndicatorUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_manager),
+    current_user: User = Depends(require_admin),
 ):
     indicator = db.get(KpiIndicator, indicator_id)
     if not indicator:
@@ -141,7 +141,7 @@ def update_indicator(
 
 
 @router.delete("/indicators/{indicator_id}")
-def delete_indicator(indicator_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def delete_indicator(indicator_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     indicator = db.get(KpiIndicator, indicator_id)
     if not indicator:
         raise HTTPException(status_code=404, detail="Không tìm thấy chỉ tiêu")
@@ -158,7 +158,7 @@ def list_periods(db: Session = Depends(get_db), current_user: User = Depends(get
 
 
 @router.post("/periods", status_code=201)
-def create_period(payload: KpiPeriodCreate, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def create_period(payload: KpiPeriodCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     duplicate = db.scalar(select(KpiPeriod).where(KpiPeriod.month == payload.month, KpiPeriod.year == payload.year))
     if duplicate:
         raise HTTPException(status_code=409, detail="Kỳ báo cáo tháng/năm này đã tồn tại")
@@ -180,7 +180,7 @@ def create_period(payload: KpiPeriodCreate, db: Session = Depends(get_db), curre
 
 
 @router.patch("/periods/{period_id}")
-def update_period(period_id: str, payload: KpiPeriodUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def update_period(period_id: str, payload: KpiPeriodUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     period = require_period(db, period_id)
     period.status = payload.status
     db.commit()
@@ -189,7 +189,7 @@ def update_period(period_id: str, payload: KpiPeriodUpdate, db: Session = Depend
 
 
 @router.delete("/periods/{period_id}")
-def delete_period(period_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def delete_period(period_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     period = require_period(db, period_id)
     db.execute(delete(KpiResult).where(KpiResult.period_id == period.id))
     db.delete(period)
@@ -212,7 +212,7 @@ def get_results(
 
 
 @router.put("/periods/{period_id}/results")
-def upsert_results(period_id: str, payload: KpiResultBatch, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def upsert_results(period_id: str, payload: KpiResultBatch, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     period = require_period(db, period_id)
     if period.status != "open":
         raise HTTPException(status_code=400, detail="Kỳ đã đóng, không thể nhập liệu")

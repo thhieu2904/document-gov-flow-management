@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.captcha import create_captcha_challenge, verify_captcha
@@ -23,11 +22,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Mã xác nhận không đúng hoặc đã hết hạn")
     provider = get_auth_provider()
     result = provider.login(db, payload.email.lower(), payload.password)
-    user = None
-    if result.supabase_user_id:
-        user = db.scalar(select(User).where(User.supabase_user_id == result.supabase_user_id))
-    else:
-        user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    user = provider.verify_token(db, result.access_token)
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Tai khoan khong kha dung")
     return {

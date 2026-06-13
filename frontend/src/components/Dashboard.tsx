@@ -183,7 +183,8 @@ export function DashboardView({ user, users, departments, onOpen, onChanged, onN
       </section>
     );
   }
-  const stats: DashboardStat[] = user.role === "manager"
+  const isAdmin = user.role === "superadmin" || user.role === "manager";
+  const stats: DashboardStat[] = isAdmin
     ? [
         { label: "Tổng văn bản", value: data.total_documents, icon: <FileText size={20} />, highlightKey: "all" },
         { label: "Chưa giao", value: data.draft_documents, icon: <Inbox size={20} />, tone: "slate", highlightKey: "draft" },
@@ -198,7 +199,7 @@ export function DashboardView({ user, users, departments, onOpen, onChanged, onN
         { label: "Đang làm", value: data.in_progress_documents, icon: <BriefcaseBusiness size={20} />, tone: "slate", highlightKey: "in_progress" },
         { label: "Sắp đến hạn", value: data.due_soon_documents, icon: <CalendarClock size={20} />, tone: "blue", highlightKey: "due_soon" },
         { label: "Quá hạn", value: data.overdue_documents, icon: <AlertTriangle size={20} />, tone: "red", highlightKey: "overdue" },
-        { label: "Đã nộp trong kỳ", value: data.completed_documents, icon: <CheckCircle2 size={20} />, tone: "slate", completedView: "assigned_completed" },
+        { label: "Đã duyệt trong kỳ", value: data.completed_documents, icon: <CheckCircle2 size={20} />, tone: "slate", completedView: "assigned_completed" },
       ];
   const selectedStat = stats.find((item) => item.label === selectedStatLabel);
   const selectedHighlightCount = selectedStat?.highlightKey ? data.work_items.filter((item) => matchesHighlight(item, selectedStat.highlightKey!)).length : 0;
@@ -232,8 +233,8 @@ export function DashboardView({ user, users, departments, onOpen, onChanged, onN
     <section>
       <PageTitle
         title="Tổng quan"
-        desc={user.role === "manager" ? "Theo dõi toàn bộ văn bản đang cần thực hiện, hạn xử lý và kết quả hoàn thành." : "Theo dõi các văn bản được giao và hạn xử lý của bạn."}
-        action={user.role === "manager" ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> Thêm văn bản</button> : undefined}
+        desc={isAdmin ? "Theo dõi toàn bộ văn bản đang cần thực hiện, hạn xử lý và kết quả hoàn thành." : "Theo dõi các văn bản được giao và hạn xử lý của bạn."}
+        action={isAdmin ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> Thêm văn bản</button> : undefined}
       />
       {error ? <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</div> : null}
       <div className="mb-5 rounded-lg border border-slate-200 bg-white p-4">
@@ -270,7 +271,7 @@ export function DashboardView({ user, users, departments, onOpen, onChanged, onN
         {selectedStatText ? <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-bold text-[#214b74]">{selectedStatText}</p> : null}
         <WorkGrid items={data.work_items} sortBy={sortBy} sortDir={sortDir} highlightKey={highlightKey} onSort={toggleSort} onOpen={onOpen} />
       </Panel>
-      {creating ? <DocumentModal users={users} departments={departments} onClose={() => setCreating(false)} onDone={async () => { setCreating(false); await load(); await onChanged?.(); }} /> : null}
+      {creating ? <DocumentModal currentUser={user} users={users} departments={departments} onClose={() => setCreating(false)} onDone={async () => { setCreating(false); await load(); await onChanged?.(); }} /> : null}
     </section>
   );
 }

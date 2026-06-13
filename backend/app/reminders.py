@@ -33,8 +33,11 @@ def bool_value(value: str) -> bool:
 
 def get_setting_map(db: Session) -> dict[str, str]:
     values = DEFAULT_REMINDER_SETTINGS.copy()
-    for item in db.scalars(select(SystemSetting)).all():
-        values[item.key] = item.value
+    try:
+        for item in db.scalars(select(SystemSetting)).all():
+            values[item.key] = item.value
+    except Exception:
+        pass
     return values
 
 
@@ -61,7 +64,7 @@ def reminder_label(kind: str) -> str:
     return {"due_soon": "Sắp đến hạn", "urgent": "Rất gấp", "overdue": "Quá hạn"}[kind]
 
 
-def staff_reminder_candidates(db: Session) -> list[dict]:
+def staff_reminder_candidates(db: Session, current_user: User | None = None) -> list[dict]:
     setting = get_setting_map(db)
     if not bool_value(setting["staff_reminder_enabled"]):
         return []
@@ -69,13 +72,16 @@ def staff_reminder_candidates(db: Session) -> list[dict]:
     due_soon_days = int(setting["staff_due_soon_days"])
     assignments = db.scalars(
         select(DocumentAssignment)
-        .where(DocumentAssignment.status.in_(["pending", "in_progress"]), DocumentAssignment.due_at.is_not(None))
+        .where(DocumentAssignment.status.in_(["pending", "in_progress", "returned"]), DocumentAssignment.due_at.is_not(None))
         .order_by(DocumentAssignment.due_at.asc())
     ).all()
     result: list[dict] = []
     for assignment in assignments:
         doc = assignment.document
         assignee = assignment.assignee
+        if current_user and current_user.role == "manager":
+            if not current_user.department_id or not doc or doc.department_id != current_user.department_id:
+                continue
         if not doc or not assignee or not assignee.email or not assignee.is_active:
             continue
         due = assignment.due_at.astimezone(VN_TZ) if assignment.due_at else None
@@ -112,8 +118,8 @@ def staff_reminder_candidates(db: Session) -> list[dict]:
     return result
 
 
-async def run_staff_reminders(db: Session, dry_run: bool = True) -> dict:
-    candidates = staff_reminder_candidates(db)
+async def run_staff_reminders(db: Session, dry_run: bool = True, current_user: User | None = None) -> dict:
+    candidates = staff_reminder_candidates(db, current_user)
     sendable = [item for item in candidates if not item["already_sent"]]
     sent = 0
     if not dry_run:
@@ -135,8 +141,8 @@ async def run_staff_reminders(db: Session, dry_run: bool = True) -> dict:
     return {"total": len(candidates), "sendable": len(sendable), "sent": sent, "settings": get_setting_map(db), "items": candidates}
 
 
-def digest_items(db: Session) -> list[dict]:
-    items = staff_reminder_candidates(db)
+def digest_items(db: Session, current_user: User | None = None) -> list[dict]:
+    items = staff_reminder_candidates(db, current_user)
     return [item for item in items if item["reminder_type"] in {"overdue", "urgent", "due_soon"}]
 
 
@@ -168,7 +174,7 @@ def build_digest_html(items: list[dict], title: str) -> str:
 
 
 async def run_manager_digest(db: Session, manager: User, dry_run: bool = True) -> dict:
-    items = digest_items(db)
+    items = digest_items(db, manager)
     title = "Tổng hợp văn bản cần chú ý"
     subject, html = f"[Tổng hợp] {title}", build_digest_html(items, title)
     log_key = f"manager_digest:{manager.id}:{datetime.now(VN_TZ).strftime('%Y-%m-%d')}"
@@ -197,7 +203,13 @@ def report_bounds(kind: str, now: datetime | None = None) -> tuple[datetime, dat
 
 async def run_manager_report(db: Session, manager: User, kind: str, dry_run: bool = True) -> dict:
     start, end, label = report_bounds(kind)
-    docs = db.scalars(select(Document)).all()
+    query = select(Document)
+    if manager.role == "manager":
+        if manager.department_id:
+            query = query.where(Document.department_id == manager.department_id)
+        else:
+            query = query.where(False)
+    docs = db.scalars(query).all()
     in_range = [doc for doc in docs if any(value and start <= value < end for value in [doc.issued_at, doc.due_at, doc.completed_at])]
     open_docs = [doc for doc in docs if doc.status != "completed"]
     late_completed = [doc for doc in in_range if doc.status == "completed" and doc.due_at and doc.completed_at and doc.completed_at > doc.due_at]

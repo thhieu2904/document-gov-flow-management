@@ -92,6 +92,20 @@ class DocumentAssignment(Base):
     manager: Mapped[User] = relationship(foreign_keys=[assigned_by])
 
 
+class AssignmentReview(Base):
+    __tablename__ = "assignment_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    assignment_id: Mapped[str] = mapped_column(String(36), ForeignKey("document_assignments.id"), nullable=False, index=True)
+    reviewer_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, index=True)
+
+    assignment: Mapped[DocumentAssignment] = relationship(foreign_keys=[assignment_id])
+    reviewer: Mapped[User] = relationship(foreign_keys=[reviewer_id])
+
+
 class DocumentComment(Base):
     __tablename__ = "document_comments"
 
@@ -109,7 +123,7 @@ class DocumentAttachment(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     document_id: Mapped[str] = mapped_column(String(36), ForeignKey("documents.id"), nullable=False, index=True)
     assignment_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("document_assignments.id"), index=True)
-    storage_provider: Mapped[str] = mapped_column(String(30), default="r2")
+    storage_provider: Mapped[str] = mapped_column(String(30), default="local")
     storage_key: Mapped[str] = mapped_column(String(1000), nullable=False)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     mime_type: Mapped[str] = mapped_column(String(255), default="application/octet-stream")

@@ -121,6 +121,10 @@ class AssignmentSubmit(BaseModel):
     result_note: str | None = None
 
 
+class AssignmentReviewRequest(BaseModel):
+    note: str | None = None
+
+
 class CommentCreate(BaseModel):
     content: str
     assignment_id: str | None = None

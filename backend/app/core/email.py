@@ -175,6 +175,37 @@ def email_assignment_submitted(doc_title: str, doc_code: str | None, staff_name:
     return subject, build_email_html("Nhân viên đã gửi lại văn bản", body)
 
 
+def email_assignment_approved(doc_title: str, doc_code: str | None, reviewer_name: str, note: str | None, frontend_url: str) -> tuple[str, str]:
+    subject = f"[Đã duyệt] {doc_code or ''} - {doc_title}"
+    body = f"""
+    <p>Kết quả xử lý văn bản của bạn đã được <strong>{escape(reviewer_name)}</strong> duyệt.</p>
+    <div style="background: #f0fdf4; padding: 15px; border-left: 4px solid #16a34a;
+                border-radius: 0 4px 4px 0; margin: 15px 0;">
+      <p style="margin: 0 0 8px;"><strong>Số hiệu/ký hiệu:</strong> {escape(doc_code or 'Không có')}</p>
+      <p style="margin: 0 0 8px;"><strong>Trích yếu:</strong> {escape(doc_title)}</p>
+      {f'<p style="margin: 0;"><strong>Ghi chú duyệt:</strong> {escape(note)}</p>' if note else ''}
+    </div>
+    {link_button(frontend_url, "Xem văn bản")}
+    """
+    return subject, build_email_html("Kết quả đã được duyệt", body)
+
+
+def email_assignment_returned(doc_title: str, doc_code: str | None, reviewer_name: str, note: str, frontend_url: str) -> tuple[str, str]:
+    subject = f"[Trả về] {doc_code or ''} - {doc_title}"
+    body = f"""
+    <p>Kết quả xử lý văn bản của bạn đã được <strong>{escape(reviewer_name)}</strong> trả về để bổ sung.</p>
+    <div style="background: #fff7ed; padding: 15px; border-left: 4px solid #f97316;
+                border-radius: 0 4px 4px 0; margin: 15px 0;">
+      <p style="margin: 0 0 8px;"><strong>Số hiệu/ký hiệu:</strong> {escape(doc_code or 'Không có')}</p>
+      <p style="margin: 0 0 8px;"><strong>Trích yếu:</strong> {escape(doc_title)}</p>
+      <p style="margin: 0;"><strong>Lý do/ghi chú:</strong> {escape(note)}</p>
+    </div>
+    <p>Vui lòng đăng nhập để chỉnh sửa ghi chú hoặc bổ sung file kết quả rồi gửi lại.</p>
+    {link_button(frontend_url, "Cập nhật kết quả")}
+    """
+    return subject, build_email_html("Kết quả cần bổ sung", body)
+
+
 def email_staff_reminder(kind_label: str, doc_title: str, doc_code: str | None, staff_name: str, due_at: str, frontend_url: str) -> tuple[str, str]:
     subject = f"[{kind_label}] {doc_code or ''} - {doc_title}"
     body = f"""
@@ -222,4 +253,3 @@ def email_document_deleted(doc_title: str, doc_code: str | None, staff_name: str
     <p>Nếu bạn có thắc mắc, vui lòng liên hệ quản lý trực tiếp.</p>
     """
     return subject, build_email_html("Văn bản đã bị thu hồi", body)
-

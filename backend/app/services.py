@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Document, DocumentAssignment, DocumentAttachment, Notification, User, now_utc
+from app.models import AssignmentReview, Document, DocumentAssignment, DocumentAttachment, Notification, User, now_utc
 
 
 def notify(db: Session, user_id: str | None, document_id: str | None, title: str, message: str, assignment_id: str | None = None) -> None:
@@ -14,9 +14,29 @@ def document_assignments(db: Session, document_id: str) -> list[DocumentAssignme
     return db.scalars(select(DocumentAssignment).where(DocumentAssignment.document_id == document_id)).all()
 
 
-def can_view_document(user: User, doc: Document, assignments: list[DocumentAssignment]) -> bool:
-    if user.role == "manager":
+def is_superadmin(user: User) -> bool:
+    return user.role == "superadmin"
+
+
+def is_admin(user: User) -> bool:
+    return user.role in {"superadmin", "manager"}
+
+
+def can_manage_department(user: User, department_id: str | None) -> bool:
+    if is_superadmin(user):
         return True
+    return user.role == "manager" and bool(user.department_id) and user.department_id == department_id
+
+
+def can_manage_document(user: User, doc: Document) -> bool:
+    return can_manage_department(user, doc.department_id)
+
+
+def can_view_document(user: User, doc: Document, assignments: list[DocumentAssignment]) -> bool:
+    if is_superadmin(user):
+        return True
+    if user.role == "manager":
+        return bool(user.department_id) and user.department_id == doc.department_id
     return any(item.assignee_id == user.id for item in assignments)
 
 
@@ -26,7 +46,7 @@ def ensure_can_view(user: User, doc: Document, assignments: list[DocumentAssignm
 
 
 def ensure_manager_owner(user: User, doc: Document) -> None:
-    if user.role != "manager":
+    if not can_manage_document(user, doc):
         raise HTTPException(status_code=403, detail="Bạn không có quyền thao tác văn bản này")
 
 
@@ -41,9 +61,13 @@ def sync_document_status(db: Session, doc: Document) -> None:
         doc.status = "draft"
         doc.completed_at = None
         return
-    if all(item.status == "completed" for item in assignments):
+    if all(item.status == "approved" for item in assignments):
         doc.status = "completed"
         doc.completed_at = doc.completed_at or now_utc()
+        return
+    if all(item.status in {"submitted", "approved"} for item in assignments) and any(item.status == "submitted" for item in assignments):
+        doc.status = "submitted"
+        doc.completed_at = None
         return
     doc.status = "in_progress"
     doc.completed_at = None
@@ -52,11 +76,24 @@ def sync_document_status(db: Session, doc: Document) -> None:
 def complete_document(db: Session, doc: Document) -> None:
     assignments = document_assignments(db, doc.id)
     for item in assignments:
-        if item.status != "completed":
-            item.status = "completed"
+        if item.status != "approved":
+            item.status = "approved"
             item.completed_at = item.completed_at or now_utc()
     doc.status = "completed"
     doc.completed_at = now_utc()
+
+
+def assignment_reviews(db: Session, assignment_id: str) -> list[AssignmentReview]:
+    return db.scalars(select(AssignmentReview).where(AssignmentReview.assignment_id == assignment_id).order_by(AssignmentReview.created_at.desc())).all()
+
+
+def latest_return_note(db: Session, assignment_id: str) -> str | None:
+    review = db.scalar(
+        select(AssignmentReview)
+        .where(AssignmentReview.assignment_id == assignment_id, AssignmentReview.action == "returned")
+        .order_by(AssignmentReview.created_at.desc())
+    )
+    return review.note if review else None
 
 
 def attachment_to_dict(att: DocumentAttachment, uploader: User | None = None) -> dict:

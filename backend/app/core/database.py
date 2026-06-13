@@ -18,9 +18,9 @@ def get_engine() -> Engine:
     global _engine
     if _engine is None:
         if not settings.database_url:
-            raise RuntimeError("DATABASE_URL is required and must point to Supabase PostgreSQL.")
+            raise RuntimeError("DATABASE_URL is required.")
         if settings.database_url.startswith("sqlite"):
-            raise RuntimeError("SQLite is intentionally disabled. Use Supabase PostgreSQL for DATABASE_URL.")
+            raise RuntimeError("SQLite is intentionally disabled.")
         connect_args = {}
         if settings.database_url.startswith("postgresql+psycopg"):
             connect_args["prepare_threshold"] = None

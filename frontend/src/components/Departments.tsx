@@ -7,7 +7,7 @@ import { Empty, PageTitle, Panel, SystemModal } from "./shared";
 type DepartmentModalState = { mode: "create" } | { mode: "edit"; department: Department };
 
 function activeStaff(users: User[], departmentId: string) {
-  return users.filter((u) => u.role === "staff" && u.is_active && u.department_id === departmentId);
+  return users.filter((u) => u.role !== "superadmin" && u.is_active && u.department_id === departmentId);
 }
 
 export function DepartmentsView({ departments, users, onChanged }: { departments: Department[]; users: User[]; onChanged: () => Promise<void> }) {

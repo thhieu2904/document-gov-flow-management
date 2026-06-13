@@ -1,28 +1,30 @@
 import { useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { CheckCircle, Clock, FileText, Paperclip, Send, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { CheckCircle, Clock, FileText, Paperclip, RotateCcw, Send, ThumbsUp, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { api, apiDownload, errorMessage } from "../api";
 import type { Assignment, AssignmentStatus, Attachment, DisplayStatus, DocumentDetail, User } from "../types";
 import { fmtDateTimeSecond, fmtSize, userName } from "../utils";
 import { Empty, Panel, Status, SystemModal } from "./shared";
 
 function assignmentDisplayStatus(assignment: Assignment): DisplayStatus | AssignmentStatus {
-  if (assignment.status === "completed" && assignment.due_at && assignment.completed_at && new Date(assignment.completed_at).getTime() > new Date(assignment.due_at).getTime()) {
+  if (assignment.status === "approved" && assignment.due_at && assignment.completed_at && new Date(assignment.completed_at).getTime() > new Date(assignment.due_at).getTime()) {
     return "completed_late";
   }
-  if (assignment.status !== "completed" && assignment.due_at && new Date(assignment.due_at).getTime() < Date.now()) {
+  if (assignment.status === "submitted" || assignment.status === "returned") return assignment.status;
+  if (assignment.status !== "approved" && assignment.due_at && new Date(assignment.due_at).getTime() < Date.now()) {
     return "overdue";
   }
   return assignment.status;
 }
 
 function lateText(assignment: Assignment) {
-  if (assignment.status !== "completed" || !assignment.due_at || !assignment.completed_at) return "";
+  if (assignment.status !== "approved" || !assignment.due_at || !assignment.completed_at) return "";
   return new Date(assignment.completed_at).getTime() > new Date(assignment.due_at).getTime() ? " · Trễ hạn" : " · Đúng hạn";
 }
 
 function derivedDocStatus(detail: DocumentDetail) {
   if (detail.status === "completed") return "completed";
+  if (detail.status === "submitted") return "submitted";
   if (!detail.assignment_count) return "draft";
   if (detail.due_at && new Date(detail.due_at).getTime() < Date.now()) return "overdue";
   if (detail.due_at) {
@@ -31,14 +33,6 @@ function derivedDocStatus(detail: DocumentDetail) {
   }
   return "in_progress";
 }
-
-const statusLabel: Record<string, string> = {
-  draft: "Chưa giao",
-  in_progress: "Đang thực hiện",
-  due_soon: "Sắp đến hạn",
-  overdue: "Quá hạn",
-  completed: "Hoàn tất",
-};
 
 export function DetailModal({ detail, currentUser, users, onClose, onReload }: { detail: DocumentDetail; currentUser: User; users: User[]; onClose: () => void; onReload: () => Promise<void> }) {
   const myAssignment = detail.assignments.find((item) => item.assignee_id === currentUser.id);
@@ -95,7 +89,7 @@ export function DetailModal({ detail, currentUser, users, onClose, onReload }: {
             <div className="grid gap-4">
               <Panel title="Tài liệu gốc" icon={<Paperclip size={16} />} className="mb-0" bodyClassName="space-y-3">
                 {canUploadOriginal ? <UploadBox documentId={detail.id} onDone={onReload} /> : null}
-                {isAssigned && currentUser.role === "manager" && !canUploadOriginal ? <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">Đã giao việc nên không thể thêm file gốc.</p> : null}
+                {isAssigned && detail.my_permissions.can_update && !canUploadOriginal ? <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">Đã giao việc nên không thể thêm file gốc.</p> : null}
                 <AttachmentList files={originalFiles} users={users} emptyText="Chưa có tài liệu gốc." />
               </Panel>
 
@@ -107,7 +101,7 @@ export function DetailModal({ detail, currentUser, users, onClose, onReload }: {
             <Panel title={`Việc được giao (${detail.assignments.length})`} icon={<UsersRound size={16} />} className="mb-0" bodyClassName="space-y-3">
               {detail.assignments.length ? (
                 detail.assignments.map((a) => (
-                  <div key={a.id} className={clsx("rounded-lg border p-4", a.status === "completed" ? "border-emerald-200 bg-emerald-50/50" : assignmentDisplayStatus(a) === "overdue" ? "border-red-200 bg-red-50/40" : "border-slate-200 bg-white")}>
+                  <div key={a.id} className={clsx("rounded-lg border p-4", a.status === "approved" ? "border-emerald-200 bg-emerald-50/50" : a.status === "returned" ? "border-orange-200 bg-orange-50/40" : assignmentDisplayStatus(a) === "overdue" ? "border-red-200 bg-red-50/40" : "border-slate-200 bg-white")}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <b className="block truncate text-sm text-slate-950">{a.assignee?.full_name || userName(users, a.assignee_id)}</b>
@@ -117,7 +111,16 @@ export function DetailModal({ detail, currentUser, users, onClose, onReload }: {
                     </div>
                     {a.instruction ? <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold leading-5 text-slate-700">{a.instruction}</p> : null}
                     {a.result_note ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold leading-5 text-emerald-800">Kết quả: {a.result_note}</p> : null}
-                    <p className="mt-3 text-[11px] font-semibold text-slate-500">Hoàn tất: {fmtDateTimeSecond(a.completed_at)}{lateText(a)}</p>
+                    {a.latest_return_note ? <p className="mt-3 rounded-lg bg-orange-50 px-3 py-2 text-xs font-bold leading-5 text-orange-800">Lý do trả về gần nhất: {a.latest_return_note}</p> : null}
+                    {a.reviews?.length ? (
+                      <div className="mt-3 space-y-1 border-t border-slate-100 pt-2 text-[11px] font-semibold text-slate-500">
+                        {a.reviews.slice(0, 3).map((review) => (
+                          <p key={review.id}>{review.action === "approved" ? "Duyệt" : "Trả về"} bởi {review.reviewer?.full_name || "quản lý"} lúc {fmtDateTimeSecond(review.created_at)}{review.note ? `: ${review.note}` : ""}</p>
+                        ))}
+                      </div>
+                    ) : null}
+                    <p className="mt-3 text-[11px] font-semibold text-slate-500">Duyệt: {fmtDateTimeSecond(a.completed_at)}{lateText(a)}</p>
+                    {detail.my_permissions.can_review && a.status === "submitted" ? <ReviewActions assignment={a} onReload={onReload} /> : null}
                   </div>
                 ))
               ) : <Empty text="Chưa giao cho ai." />}
@@ -177,12 +180,55 @@ function AttachmentList({ files, users, emptyText }: { files: Attachment[]; user
   );
 }
 
+function ReviewActions({ assignment, onReload }: { assignment: Assignment; onReload: () => Promise<void> }) {
+  const [action, setAction] = useState<"approve" | "return" | null>(null);
+  const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (!action) return;
+    setError("");
+    if (action === "return" && !note.trim()) {
+      setError("Cần nhập lý do trả về");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api(`/assignments/${assignment.id}/${action}`, { method: "POST", body: JSON.stringify({ note: note.trim() || null }) });
+      setAction(null);
+      setNote("");
+      await onReload();
+    } catch (err) {
+      setError(errorMessage(err, action === "approve" ? "Không duyệt được kết quả" : "Không trả về được kết quả"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+      <button type="button" className="icon-text-btn text-emerald-700" onClick={() => setAction("approve")}><ThumbsUp size={14} /> Duyệt</button>
+      <button type="button" className="icon-text-btn text-orange-700" onClick={() => setAction("return")}><RotateCcw size={14} /> Trả về</button>
+      {action ? (
+        <SystemModal title={action === "approve" ? "Duyệt kết quả xử lý" : "Trả về để làm lại"} onClose={() => setAction(null)} action={<><button className="icon-text-btn" onClick={() => setAction(null)}>Hủy</button><button className="primary-btn" onClick={submit} disabled={saving}>{saving ? "Đang lưu..." : action === "approve" ? "Duyệt" : "Trả về"}</button></>}>
+          {error ? <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 font-bold text-red-700">{error}</p> : null}
+          <label className="block font-bold">
+            {action === "approve" ? "Ghi chú duyệt (không bắt buộc)" : "Lý do trả về *"}
+            <textarea className="field mt-1 min-h-24 w-full" value={note} onChange={(e) => setNote(e.target.value)} placeholder={action === "approve" ? "Nhập ghi chú nếu cần..." : "Nhập nội dung cần nhân viên bổ sung..."} />
+          </label>
+        </SystemModal>
+      ) : null}
+    </div>
+  );
+}
+
 function StaffActions({ assignment, detail, onReload }: { assignment: Assignment; detail: DocumentDetail; onReload: () => Promise<void> }) {
   const [note, setNote] = useState(assignment.result_note || "");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const canSendResult = assignment.status !== "completed";
+  const canSendResult = assignment.status === "pending" || assignment.status === "in_progress" || assignment.status === "returned";
 
   async function start() {
     setError("");
@@ -214,28 +260,11 @@ function StaffActions({ assignment, detail, onReload }: { assignment: Assignment
     }
   }
 
-  async function uploadExtraResult() {
-    if (!file) return;
-    setError("");
-    setSaving(true);
-    try {
-      const form = new FormData();
-      form.set("file", file);
-      form.set("assignment_id", assignment.id);
-      await api(`/documents/${detail.id}/attachments`, { method: "POST", body: form });
-      setFile(null);
-      await onReload();
-    } catch (err) {
-      setError(errorMessage(err, "Không upload được file kết quả"));
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <Panel title="Thao tác của tôi" icon={<Send size={16} />}>
       {error ? <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
       {assignment.status === "pending" ? <button className="primary-btn" onClick={start}>Bắt đầu làm</button> : null}
+      {assignment.status === "returned" && assignment.latest_return_note ? <p className="mt-3 rounded-lg bg-orange-50 px-3 py-2 text-sm font-bold text-orange-800">Bị trả về: {assignment.latest_return_note}</p> : null}
       {canSendResult ? (
         <>
           <FilePicker id={`assignment-result-${assignment.id}`} label="File kết quả xử lý" file={file} onChange={setFile} />
@@ -244,11 +273,8 @@ function StaffActions({ assignment, detail, onReload }: { assignment: Assignment
         </>
       ) : (
         <>
-          <p className="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">Việc này đã gửi lại quản lý. Bạn vẫn có thể bổ sung file kết quả nếu thiếu.</p>
-          <div className="grid gap-2">
-            <FilePicker id={`assignment-extra-result-${assignment.id}`} label="Bổ sung file kết quả" file={file} onChange={setFile} compact />
-            <button className="icon-text-btn" onClick={uploadExtraResult} disabled={!file || saving}><Upload size={14} /> {saving ? "Đang upload..." : "Upload"}</button>
-          </div>
+          {assignment.status === "submitted" ? <p className="mb-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700">Kết quả đã gửi và đang chờ quản lý duyệt.</p> : null}
+          {assignment.status === "approved" ? <p className="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">Việc này đã được duyệt.</p> : null}
         </>
       )}
     </Panel>

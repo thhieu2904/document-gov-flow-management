@@ -8,6 +8,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.core.auth_provider import get_auth_provider
 from app.core.database import get_session_local
+from app.core.security import hash_password
 from app.models import Department, User
 
 
@@ -29,15 +30,15 @@ def main() -> None:
         user = db.scalar(select(User).where(User.email == email))
         provider = get_auth_provider()
         if user:
-            if user.supabase_user_id:
-                provider.update_password(db, user, args.password)
+            provider.update_password(db, user, args.password)
             user.full_name = args.name
             user.role = "manager"
             user.department_id = dept.id
             user.is_active = True
         else:
             user = User(
-                supabase_user_id=provider.create_user(db, email, args.password),
+                supabase_user_id=None,
+                password_hash=hash_password(args.password),
                 email=email,
                 full_name=args.name,
                 role="manager",

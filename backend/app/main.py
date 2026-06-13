@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import assignments, attachments, auth, dashboard, departments, documents, kpi, reminders, users
 from app.core.config import settings
+from app.core.database import Base, get_engine
 from app.core.scheduler import configure_scheduler, shutdown_scheduler
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_runtime()
+    Base.metadata.create_all(get_engine())
     configure_scheduler(app)
     yield
     shutdown_scheduler(app)

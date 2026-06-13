@@ -41,7 +41,7 @@ async function createPeriodForMonth(month: number, year: number) {
 }
 
 export function KpiInputView({ currentUser }: { currentUser: User }) {
-  const canEdit = currentUser.role === "manager";
+  const canEdit = currentUser.role === "superadmin" || currentUser.role === "manager";
   const currentMonth = currentKpiMonth();
   const [periods, setPeriods] = useState<KpiPeriod[]>([]);
   const [month, setMonth] = useState(currentMonth.month);

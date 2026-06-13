@@ -7,9 +7,12 @@ import type { AssignmentStatus, DisplayStatus, DocumentStatus } from "../types";
 const statusTone: Record<DisplayStatus | AssignmentStatus, string> = {
   draft: "bg-slate-100 text-slate-600",
   in_progress: "bg-amber-50 text-amber-700",
+  submitted: "bg-blue-50 text-blue-700",
+  returned: "bg-orange-50 text-orange-700",
   due_soon: "bg-blue-50 text-blue-700",
   completed: "bg-emerald-50 text-emerald-700",
   completed_late: "bg-emerald-50 text-emerald-700",
+  approved: "bg-emerald-50 text-emerald-700",
   pending: "bg-amber-50 text-amber-700",
   overdue: "bg-red-50 text-red-700",
 };
@@ -106,11 +109,11 @@ export function Stat({ label, value, icon, tone = "blue", active, onClick }: { l
 
 export function Status({ status }: { status: DisplayStatus | AssignmentStatus }) {
   const text = status in labels.displayStatus ? labels.displayStatus[status as DisplayStatus] : labels.assignmentStatus[status as AssignmentStatus];
-  return <span className={clsx("rounded-full px-2.5 py-1 text-xs font-bold", statusTone[status])}>{text}</span>;
+  return <span className={clsx("rounded-full px-2.5 py-1 text-xs font-bold whitespace-nowrap", statusTone[status])}>{text}</span>;
 }
 
 export function Priority({ p }: { p: "normal" | "high" | "urgent" }) {
-  return <span className={clsx("rounded-full px-2.5 py-1 text-xs font-bold", p === "urgent" ? "bg-red-50 text-red-700" : p === "high" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600")}>{labels.priority[p]}</span>;
+  return <span className={clsx("rounded-full px-2.5 py-1 text-xs font-bold whitespace-nowrap", p === "urgent" ? "bg-red-50 text-red-700" : p === "high" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600")}>{labels.priority[p]}</span>;
 }
 
 export function Info({ label, value }: { label: string; value: string }) {

@@ -27,6 +27,11 @@ export function Header({ user, view, onChange }: { user: User; view: View; onCha
             <h1 className="text-xl font-bold uppercase sm:text-2xl">VĂN BẢN XÃ LONG PHÚ</h1>
           </div>
         </div>
+        <div className="hidden sm:block rounded-lg border border-blue-400/20 bg-[#1a3d60]/40 px-3 py-1.5 text-right text-xs">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-200">Hỗ trợ kỹ thuật</p>
+          <p className="font-bold text-white">Nguyễn Văn Quang</p>
+          <p className="text-blue-100 mt-0.5">SĐT: <a href="tel:0907007397" className="font-bold text-amber-300 hover:text-amber-200 hover:underline">0907007397</a></p>
+        </div>
       </div>
     </header>
   );

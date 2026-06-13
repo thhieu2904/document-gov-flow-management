@@ -1,8 +1,8 @@
-export type Role = "manager" | "staff";
+export type Role = "superadmin" | "manager" | "staff";
 export type Priority = "normal" | "high" | "urgent";
-export type DocumentStatus = "draft" | "in_progress" | "completed";
+export type DocumentStatus = "draft" | "in_progress" | "submitted" | "completed";
 export type DisplayStatus = DocumentStatus | "due_soon" | "overdue" | "completed_late";
-export type AssignmentStatus = "pending" | "in_progress" | "completed" | "overdue";
+export type AssignmentStatus = "pending" | "in_progress" | "submitted" | "returned" | "approved" | "overdue";
 export type KpiStatus = "not_entered" | "exceeded" | "above_98" | "above_68" | "above_50" | "below_50";
 export type View = "dashboard" | "assigned" | "assigned_pending" | "assigned_completed" | "all_documents" | "completed_documents" | "users" | "departments" | "reminders" | "kpi_input" | "kpi_display";
 
@@ -154,6 +154,18 @@ export type Assignment = {
   submitted_at: string | null;
   completed_at: string | null;
   created_at: string;
+  reviews?: AssignmentReview[];
+  latest_return_note?: string | null;
+};
+
+export type AssignmentReview = {
+  id: string;
+  assignment_id: string;
+  reviewer_id: string;
+  reviewer?: Pick<User, "id" | "full_name" | "email" | "role" | "department_id"> | null;
+  action: "approved" | "returned";
+  note: string | null;
+  created_at: string;
 };
 
 export type Attachment = {
@@ -172,7 +184,7 @@ export type Attachment = {
 export type DocumentDetail = DocumentRow & {
   assignments: Assignment[];
   attachments: Attachment[];
-  my_permissions: { can_update: boolean; can_assign: boolean; can_delete: boolean };
+  my_permissions: { can_update: boolean; can_assign: boolean; can_delete: boolean; can_review?: boolean };
 };
 
 export type DashboardDocument = {

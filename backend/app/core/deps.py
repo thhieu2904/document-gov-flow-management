@@ -29,6 +29,26 @@ def require_manager(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in {"superadmin", "manager"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ quản lý được thao tác")
+    return current_user
+
+
+def require_superadmin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "superadmin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ quản trị toàn hệ thống được thao tác")
+    return current_user
+
+
+def is_superadmin(user: User) -> bool:
+    return user.role == "superadmin"
+
+
+def is_admin(user: User) -> bool:
+    return user.role in {"superadmin", "manager"}
+
+
 def ensure_valid_role(role: str) -> None:
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Vai trò không hợp lệ")

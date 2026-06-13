@@ -42,7 +42,7 @@ def login(client: TestClient, email: str) -> dict[str, str]:
 
 def main() -> None:
     client = TestClient(app)
-    manager = login(client, "manager@example.com")
+    manager = login(client, "quanly.vanhanh@example.com")
     staff = login(client, "nhanvien1@example.com")
 
     dashboard = ok(client.get("/api/dashboard", headers=manager), "manager dashboard")
@@ -97,11 +97,15 @@ def main() -> None:
         raise AssertionError("result file was not linked to assignment")
     ok(client.post(f"/api/assignments/{assignment_id}/submit", headers=staff, json={"result_note": "Đã xử lý xong"}), "submit assignment")
     detail = ok(client.get(f"/api/documents/{doc_id}", headers=manager), "manager detail")
-    if detail["status"] != "completed":
-        raise AssertionError("document not completed")
+    if detail["status"] != "submitted":
+        raise AssertionError("document was not moved to submitted status")
     result_files = [item for item in detail["attachments"] if item["assignment_id"] == assignment_id]
     if not result_files:
         raise AssertionError("manager cannot see assignment result file")
+    ok(client.post(f"/api/assignments/{assignment_id}/approve", headers=manager, json={"note": "Đạt yêu cầu"}), "approve assignment")
+    detail = ok(client.get(f"/api/documents/{doc_id}", headers=manager), "manager detail after approve")
+    if detail["status"] != "completed":
+        raise AssertionError("document not completed after manager approval")
 
     status(client.post("/api/documents", headers=staff, json={"title": "Staff cannot create"}), 403, "staff create blocked")
 

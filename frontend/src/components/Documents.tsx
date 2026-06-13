@@ -7,7 +7,7 @@ import { fmtDateTimeSecond, fromDateTimeInputValue } from "../utils";
 import { Empty, Loading, PageTitle, Pager, Panel, Priority as PriorityBadge, Status } from "./shared";
 import { ExportModal } from "./ExportModal";
 
-type StatusFilter = "open" | "draft" | "in_progress" | "due_soon" | "overdue" | "completed" | "completed_late";
+type StatusFilter = "open" | "draft" | "in_progress" | "submitted" | "returned" | "due_soon" | "overdue" | "completed" | "completed_late";
 type Period = "week" | "month" | "all";
 type SortKey = "code" | "title" | "issued_at" | "due_at" | "progress" | "status" | "priority" | "created_at";
 type SortDir = "asc" | "desc";
@@ -17,6 +17,7 @@ function displayStatus(doc: DocumentRow): DisplayStatus {
     if (doc.due_at && doc.completed_at && new Date(doc.completed_at).getTime() > new Date(doc.due_at).getTime()) return "completed_late";
     return "completed";
   }
+  if (doc.status === "submitted") return "submitted";
   if (doc.due_at && new Date(doc.due_at).getTime() < Date.now()) return "overdue";
   if (doc.due_at && new Date(doc.due_at).getTime() <= Date.now() + 3 * 86400000) return "due_soon";
   return doc.status;
@@ -125,7 +126,7 @@ export function DocumentsView({ scope, title, mode, currentUser, users, departme
       <PageTitle title={title} desc={mode === "period" ? "Các văn bản có hạn hoặc ngày ban hành trong kỳ đang chọn." : "Kho tra cứu toàn bộ văn bản, gồm cả tồn đọng tháng trước và văn bản đã hoàn tất."} action={
         <div className="flex gap-2">
           <button className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow hover:bg-emerald-700" onClick={() => setShowExport(true)}><Download size={16} /> Xuất Excel</button>
-          {currentUser.role === "manager" && scope === "assigned_by_me" ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> Tạo văn bản</button> : null}
+          {(currentUser.role === "superadmin" || currentUser.role === "manager") && scope === "assigned_by_me" ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> Tạo văn bản</button> : null}
         </div>
       } />
       {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
@@ -160,6 +161,8 @@ export function DocumentsView({ scope, title, mode, currentUser, users, departme
               ["open", "Cần thực hiện"],
               ["draft", scope === "my_tasks" ? "Chưa nhận" : "Chưa giao"],
               ["in_progress", "Đang thực hiện"],
+              ["submitted", "Chờ duyệt"],
+              ["returned", "Bị trả về"],
               ["due_soon", "Sắp đến hạn"],
               ["overdue", "Quá hạn"],
               ["completed", "Hoàn tất"],
@@ -179,7 +182,7 @@ export function DocumentsView({ scope, title, mode, currentUser, users, departme
           <Pager page={page.page} size={page.size} total={page.total} onPage={setPageNo} />
         </> : <Loading />}
       </Panel>
-      {creating ? <DocumentModal users={users} departments={departments} onClose={() => setCreating(false)} onDone={async () => { setCreating(false); await load(); await onChanged?.(); }} /> : null}
+      {creating ? <DocumentModal currentUser={currentUser} users={users} departments={departments} onClose={() => setCreating(false)} onDone={async () => { setCreating(false); await load(); await onChanged?.(); }} /> : null}
       {showExport && (
         <ExportModal
           onClose={() => setShowExport(false)}
@@ -224,8 +227,8 @@ export function DocumentTable({ docs, sortBy, sortDir, onSort, onOpen }: { docs:
   );
 }
 
-export function DocumentModal({ users, departments, onClose, onDone }: { users: User[]; departments: Department[]; onClose: () => void; onDone: () => Promise<void> }) {
-  const staff = users.filter((u) => u.role === "staff" && u.is_active);
+export function DocumentModal({ currentUser, users, departments, onClose, onDone }: { currentUser: User; users: User[]; departments: Department[]; onClose: () => void; onDone: () => Promise<void> }) {
+  const isSuperadmin = currentUser.role === "superadmin";
   const activeDepartments = departments.filter((d) => d.is_active);
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
@@ -233,13 +236,15 @@ export function DocumentModal({ users, departments, onClose, onDone }: { users: 
   const [issuedAt, setIssuedAt] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [priority, setPriority] = useState<Priority>("normal");
-  const [departmentId, setDepartmentId] = useState("");
+  const [departmentId, setDepartmentId] = useState(isSuperadmin ? "" : currentUser.department_id || "");
   const [assignees, setAssignees] = useState<string[]>([]);
   const [staffSearch, setStaffSearch] = useState("");
   const [staffDepartment, setStaffDepartment] = useState("");
   const [instruction, setInstruction] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const effectiveDepartmentId = isSuperadmin ? departmentId : currentUser.department_id || "";
+  const staff = users.filter((u) => u.role === "staff" && u.is_active && (!effectiveDepartmentId || u.department_id === effectiveDepartmentId));
   const selectedStaff = staff.filter((item) => assignees.includes(item.id));
   const filteredStaff = staff.filter((item) => {
     const matchesSearch = `${item.full_name} ${item.email}`.toLowerCase().includes(staffSearch.toLowerCase());
@@ -247,11 +252,20 @@ export function DocumentModal({ users, departments, onClose, onDone }: { users: 
     return matchesSearch && matchesDept;
   });
 
+  useEffect(() => {
+    setAssignees([]);
+    setStaffDepartment("");
+  }, [effectiveDepartmentId]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!effectiveDepartmentId) {
+      setError("Cần chọn phòng ban thực hiện trước khi tạo văn bản");
+      return;
+    }
     try {
-      const doc = await api<DocumentRow>("/documents", { method: "POST", body: JSON.stringify({ title, code: code || null, summary: summary || null, issued_at: fromDateTimeInputValue(issuedAt), due_at: fromDateTimeInputValue(dueAt), priority, department_id: departmentId || null }) });
+      const doc = await api<DocumentRow>("/documents", { method: "POST", body: JSON.stringify({ title, code: code || null, summary: summary || null, issued_at: fromDateTimeInputValue(issuedAt), due_at: fromDateTimeInputValue(dueAt), priority, department_id: effectiveDepartmentId }) });
       if (file) {
         const form = new FormData();
         form.set("file", file);
@@ -299,8 +313,8 @@ export function DocumentModal({ users, departments, onClose, onDone }: { users: 
                 </label>
                 <label className="col-span-2 text-sm font-bold">
                   Cơ quan/phòng ban thực hiện
-                  <select className="field mt-1 w-full" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
-                    <option value="">Không chọn</option>
+                  <select className="field mt-1 w-full" value={effectiveDepartmentId} onChange={(e) => setDepartmentId(e.target.value)} disabled={!isSuperadmin} required>
+                    <option value="">Chọn phòng ban</option>
                     {activeDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </label>
@@ -367,7 +381,7 @@ export function DocumentModal({ users, departments, onClose, onDone }: { users: 
                 ) : null}
                 <div className="mb-3 grid grid-cols-[1fr_180px] gap-2">
                   <input className="field" placeholder="Tìm nhân viên theo tên/email..." value={staffSearch} onChange={(e) => setStaffSearch(e.target.value)} />
-                  <select className="field" value={staffDepartment} onChange={(e) => setStaffDepartment(e.target.value)}>
+                  <select className="field" value={staffDepartment} onChange={(e) => setStaffDepartment(e.target.value)} disabled={Boolean(effectiveDepartmentId)}>
                     <option value="">Tất cả phòng ban</option>
                     {activeDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
@@ -383,7 +397,7 @@ export function DocumentModal({ users, departments, onClose, onDone }: { users: 
                     </label>
                   ))}
                 </div>
-                {!filteredStaff.length ? <Empty text="Không tìm thấy nhân viên phù hợp." /> : null}
+                {!filteredStaff.length ? <Empty text={effectiveDepartmentId ? "Không tìm thấy nhân viên phù hợp." : "Chọn phòng ban trước khi chọn nhân viên."} /> : null}
               </section>
             </div>
           </div>

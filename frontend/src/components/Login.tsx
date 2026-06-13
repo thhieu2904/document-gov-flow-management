@@ -11,7 +11,7 @@ type CaptchaChallenge = {
 };
 
 export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
-  const [email, setEmail] = useState("manager@example.com");
+  const [email, setEmail] = useState("thhieu2904@gmail.com");
   const [password, setPassword] = useState("password123");
   const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
   const [captchaAnswer, setCaptchaAnswer] = useState("");
@@ -19,7 +19,9 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const demo = [
-    ["manager@example.com", "Quản lý: tạo văn bản, giao việc, chốt hoàn tất"],
+    ["thhieu2904@gmail.com", "Superadmin: quản lý toàn hệ thống"],
+    ["nguyenvanquang.vms@gmail.com", "Superadmin: quản lý toàn hệ thống"],
+    ["quanly.vanhanh@example.com", "Quản lý: xử lý văn bản trong phòng ban"],
     ["nhanvien1@example.com", "Nhân viên: nhận việc, gửi lại kết quả"],
     ["nhanvien2@example.com", "Nhân viên: có việc đang làm/quá hạn"],
     ["nhanvien3@example.com", "Nhân viên: có việc đã hoàn tất"],
@@ -78,24 +80,8 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#214b74] px-6 py-10">
-      <div className="mx-auto grid min-h-[calc(100vh-80px)] max-w-5xl items-center gap-6 lg:grid-cols-[1fr_0.9fr]">
-        <section className="rounded-xl bg-white p-6 shadow-xl">
-          <p className="text-xs font-black uppercase text-[#2b668f]">MVP quản lý văn bản nội bộ</p>
-          <h1 className="mt-1 text-2xl font-black">Flow đơn giản</h1>
-          <div className="mt-4 grid gap-2 text-sm font-semibold text-slate-700">
-            {["Quản lý tạo văn bản và đính kèm file", "Giao cho một hoặc nhiều nhân viên", "Nhân viên nhận việc, xử lý, upload file kết quả", "Nhân viên bấm Gửi lại manager", "Manager xem trạng thái và bấm Hoàn tất"].map((item) => <div key={item} className="rounded-lg border border-slate-200 bg-slate-50 p-3">{item}</div>)}
-          </div>
-          <p className="mt-5 text-sm font-black">Tài khoản demo</p>
-          <div className="mt-2 grid gap-2">
-            {demo.map(([mail, hint]) => (
-              <button key={mail} type="button" className={clsx("rounded-lg border p-3 text-left", email === mail ? "border-[#1d6ef0] bg-blue-50" : "border-slate-200")} onClick={() => { setEmail(mail); setPassword("password123"); setCaptchaAnswer(""); }}>
-                <b>{mail}</b>
-                <div className="text-xs text-slate-500">{hint}</div>
-              </button>
-            ))}
-          </div>
-        </section>
+    <main className="min-h-screen bg-[#214b74] px-6 py-10 flex items-center justify-center">
+      <div className="w-full max-w-[440px]">
         <form onSubmit={submit} className="rounded-xl bg-white p-6 shadow-xl">
           <div className="mb-6 flex items-center gap-4">
             <img src="/LOGO_HCC.jpg" className="h-16 w-16 rounded-full border object-cover p-1" />
@@ -127,7 +113,17 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
           </label>
           {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
           <button className="primary-btn w-full" disabled={loading || captchaLoading || !captcha}>{loading ? <Loader2 className="animate-spin" size={18} /> : null} Đăng nhập</button>
-          <p className="mt-4 text-xs text-slate-500">Mật khẩu demo: password123</p>
+          
+          <div className="mt-6 border-t border-slate-100 pt-4 flex items-center justify-between text-xs">
+            <div>
+              <p className="font-black text-slate-400 uppercase tracking-wider text-[9px]">Hỗ trợ kỹ thuật</p>
+              <p className="font-bold text-slate-800 mt-0.5">Nguyễn Văn Quang</p>
+            </div>
+            <div className="text-right">
+              <p className="font-black text-slate-400 uppercase tracking-wider text-[9px]">Số điện thoại</p>
+              <a href="tel:0907007397" className="font-bold text-[#1d6ef0] hover:underline mt-0.5 block">0907007397</a>
+            </div>
+          </div>
         </form>
       </div>
     </main>

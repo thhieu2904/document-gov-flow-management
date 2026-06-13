@@ -11,14 +11,16 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_manager
+from app.core.deps import get_current_user, require_admin
 from app.core.email import email_assignment_created, email_document_deleted
 from app.core.storage import get_storage_provider
 from app.email_utils import send_and_log_task
-from app.models import Document, DocumentAssignment, DocumentAttachment, DocumentComment, EmailLog, Notification, User, now_utc, VN_TZ
+from app.models import AssignmentReview, Department, Document, DocumentAssignment, DocumentAttachment, DocumentComment, EmailLog, Notification, User, now_utc, VN_TZ
 from app.schemas import AssignmentCreate, CommentCreate, DocumentCreate, DocumentUpdate
 from app.services import (
+    assignment_reviews,
     attachment_to_dict,
+    can_manage_document,
     document_assignments,
     ensure_can_view,
     ensure_manager_owner,
@@ -35,7 +37,21 @@ def user_dict(user: User | None) -> dict | None:
     return {"id": user.id, "full_name": user.full_name, "email": user.email, "role": user.role, "department_id": user.department_id}
 
 
-def assignment_dict(item: DocumentAssignment, assignee: User | None = None) -> dict:
+def review_dict(item: AssignmentReview) -> dict:
+    return {
+        "id": item.id,
+        "assignment_id": item.assignment_id,
+        "reviewer_id": item.reviewer_id,
+        "reviewer": user_dict(item.reviewer),
+        "action": item.action,
+        "note": item.note,
+        "created_at": item.created_at,
+    }
+
+
+def assignment_dict(item: DocumentAssignment, assignee: User | None = None, reviews: list[AssignmentReview] | None = None) -> dict:
+    reviews = reviews or []
+    latest_return = next((review for review in reviews if review.action == "returned"), None)
     return {
         "id": item.id,
         "document_id": item.document_id,
@@ -52,14 +68,18 @@ def assignment_dict(item: DocumentAssignment, assignee: User | None = None) -> d
         "completed_at": item.completed_at,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
+        "reviews": [review_dict(review) for review in reviews],
+        "latest_return_note": latest_return.note if latest_return else None,
     }
 
 
 def assignment_display_status(item: DocumentAssignment) -> str:
-    if item.status == "completed":
+    if item.status == "approved":
         if item.due_at and item.completed_at and item.completed_at > item.due_at:
             return "completed_late"
         return "completed"
+    if item.status in {"submitted", "returned"}:
+        return item.status
     if item.due_at and item.due_at < now_utc():
         return "overdue"
     if item.due_at and item.due_at <= now_utc() + timedelta(days=3):
@@ -69,7 +89,7 @@ def assignment_display_status(item: DocumentAssignment) -> str:
 
 def assignment_matches_status(item: DocumentAssignment, selected: set[str]) -> bool:
     display_status = assignment_display_status(item)
-    if "open" in selected and item.status != "completed":
+    if "open" in selected and item.status in {"pending", "in_progress", "returned"}:
         return True
     if "draft" in selected and item.status == "pending":
         return True
@@ -94,10 +114,10 @@ def document_dict(doc: Document, assignments: list[DocumentAssignment] | None = 
         "created_at": doc.created_at,
         "updated_at": doc.updated_at,
         "assignment_count": len(assignments),
-        "completed_count": len([item for item in assignments if item.status == "completed"]),
+        "completed_count": len([item for item in assignments if item.status == "approved"]),
     }
     if my_assignment:
-        is_completed = my_assignment.status == "completed"
+        is_completed = my_assignment.status == "approved"
         payload.update(
             {
                 "my_assignment_id": my_assignment.id,
@@ -123,9 +143,27 @@ def comment_dict(item: DocumentComment) -> dict:
 
 
 def visible_document_ids_for_user(user: User):
-    if user.role == "manager":
+    if user.role == "superadmin":
         return select(Document.id)
+    if user.role == "manager":
+        if not user.department_id:
+            return select(Document.id).where(False)
+        return select(Document.id).where(Document.department_id == user.department_id)
     return select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == user.id)
+
+
+def apply_document_scope(query, scope: str, user: User):
+    if user.role == "superadmin":
+        if scope == "my_tasks":
+            return query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == user.id)))
+        return query
+    if user.role == "manager":
+        if scope == "my_tasks":
+            return query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == user.id)))
+        if not user.department_id:
+            return query.where(False)
+        return query.where(Document.department_id == user.department_id)
+    return query.where(Document.id.in_(visible_document_ids_for_user(user)))
 
 
 def apply_document_search(query, search: str | None):
@@ -180,9 +218,9 @@ def sort_documents(
 
     def progress(doc: Document) -> float:
         if my_assignments_by_doc and doc.id in my_assignments_by_doc:
-            return 1 if my_assignments_by_doc[doc.id].status == "completed" else 0
+            return 1 if my_assignments_by_doc[doc.id].status == "approved" else 0
         assignments = assignments_by_doc.get(doc.id, [])
-        return len([item for item in assignments if item.status == "completed"]) / len(assignments) if assignments else 0
+        return len([item for item in assignments if item.status == "approved"]) / len(assignments) if assignments else 0
 
     def value(doc: Document):
         my_assignment = my_assignments_by_doc.get(doc.id) if my_assignments_by_doc else None
@@ -219,6 +257,27 @@ def paginate(db: Session, query, page: int, size: int) -> dict:
     return {"items": [document_dict(doc, by_doc.get(doc.id, [])) for doc in docs], "page": safe_page, "size": safe_size, "total": total}
 
 
+def require_active_department(db: Session, department_id: str | None) -> str:
+    if not department_id:
+        raise HTTPException(status_code=400, detail="Văn bản phải thuộc một phòng ban")
+    dept = db.get(Department, department_id)
+    if not dept or not dept.is_active:
+        raise HTTPException(status_code=400, detail="Phòng ban không hợp lệ hoặc đã xóa")
+    return dept.id
+
+
+def document_department_for_user(db: Session, user: User, requested_department_id: str | None) -> str:
+    if user.role == "superadmin":
+        return require_active_department(db, requested_department_id)
+    if user.role == "manager":
+        if not user.department_id:
+            raise HTTPException(status_code=403, detail="Tài khoản quản lý chưa được gắn phòng ban")
+        if requested_department_id and requested_department_id != user.department_id:
+            raise HTTPException(status_code=403, detail="Quản lý chỉ được tạo văn bản trong phòng ban của mình")
+        return require_active_department(db, user.department_id)
+    raise HTTPException(status_code=403, detail="Chỉ quản lý được thao tác")
+
+
 @router.get("/export")
 def export_documents(
     scope: str = "assigned_by_me",
@@ -234,12 +293,7 @@ def export_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = select(Document)
-    if current_user.role == "manager":
-        if scope == "my_tasks":
-            query = query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == current_user.id)))
-    else:
-        query = query.where(Document.id.in_(visible_document_ids_for_user(current_user)))
+    query = apply_document_scope(select(Document), scope, current_user)
     query = apply_document_search(query, search)
     all_docs = db.scalars(query).all()
     assignment_rows = db.scalars(select(DocumentAssignment).where(DocumentAssignment.document_id.in_([doc.id for doc in all_docs]))).all() if all_docs else []
@@ -298,8 +352,8 @@ def export_documents(
     # Calculate stats
     total_docs = len(sorted_docs)
     if scope == "my_tasks":
-        completed_docs = sum(1 for d in sorted_docs if my_by_doc.get(d.id) and my_by_doc[d.id].status == "completed")
-        in_progress_docs = sum(1 for d in sorted_docs if my_by_doc.get(d.id) and my_by_doc[d.id].status in ["pending", "in_progress"])
+        completed_docs = sum(1 for d in sorted_docs if my_by_doc.get(d.id) and my_by_doc[d.id].status == "approved")
+        in_progress_docs = sum(1 for d in sorted_docs if my_by_doc.get(d.id) and my_by_doc[d.id].status in ["pending", "in_progress", "returned"])
         overdue_docs = sum(1 for d in sorted_docs if my_by_doc.get(d.id) and assignment_display_status(my_by_doc[d.id]) in ["overdue", "completed_late"])
     else:
         completed_docs = sum(1 for d in sorted_docs if d.status == "completed")
@@ -332,15 +386,16 @@ def export_documents(
         return local_dt.strftime("%d/%m/%Y %H:%M")
 
     status_map = {
-        "draft": "Chưa giao", "in_progress": "Đang thực hiện", "completed": "Hoàn tất",
+        "draft": "Chưa giao", "in_progress": "Đang thực hiện", "submitted": "Chờ duyệt", "completed": "Hoàn tất",
         "completed_late": "Hoàn tất trễ hạn", "due_soon": "Sắp đến hạn", "overdue": "Quá hạn",
     }
     priority_map = {"normal": "Thường", "high": "Khẩn", "urgent": "Hỏa tốc"}
-    assign_status_map = {"pending": "Chờ xử lý", "in_progress": "Đang làm", "completed": "Xong", "overdue": "Trễ"}
+    assign_status_map = {"pending": "Chờ xử lý", "in_progress": "Đang làm", "submitted": "Chờ duyệt", "returned": "Bị trả về", "approved": "Đã duyệt", "completed": "Xong", "overdue": "Trễ"}
 
     status_color_map = {
         "Chưa giao": "64748B",
         "Đang thực hiện": "D97706",
+        "Chờ duyệt": "2563EB",
         "Hoàn tất": "059669",
         "Hoàn tất trễ hạn": "059669",
         "Sắp đến hạn": "DC2626",
@@ -354,8 +409,8 @@ def export_documents(
     for idx, doc in enumerate(sorted_docs, start=7):
         assignments = by_doc.get(doc.id, [])
         my_assignment = my_by_doc.get(doc.id)
-        completed_count = len([a for a in assignments if a.status == "completed"])
-        progress = "1/1" if my_assignment and my_assignment.status == "completed" else "0/1" if my_assignment else f"{completed_count}/{len(assignments)}"
+        completed_count = len([a for a in assignments if a.status == "approved"])
+        progress = "1/1" if my_assignment and my_assignment.status == "approved" else "0/1" if my_assignment else f"{completed_count}/{len(assignments)}"
         display_status_key = assignment_display_status(my_assignment) if my_assignment else derived_document_status(doc)
         display_status = status_map.get(display_status_key, assign_status_map.get(display_status_key, display_status_key))
         doc_priority = priority_map.get(my_assignment.priority if my_assignment else doc.priority, my_assignment.priority if my_assignment else doc.priority)
@@ -417,12 +472,7 @@ def list_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = select(Document)
-    if current_user.role == "manager":
-        if scope == "my_tasks":
-            query = query.where(Document.id.in_(select(DocumentAssignment.document_id).where(DocumentAssignment.assignee_id == current_user.id)))
-    else:
-        query = query.where(Document.id.in_(visible_document_ids_for_user(current_user)))
+    query = apply_document_scope(select(Document), scope, current_user)
     query = apply_document_search(query, search)
     all_docs = db.scalars(query).all()
     assignment_rows = db.scalars(select(DocumentAssignment).where(DocumentAssignment.document_id.in_([doc.id for doc in all_docs]))).all() if all_docs else []
@@ -453,8 +503,10 @@ def list_documents(
 
 
 @router.post("")
-def create_document(payload: DocumentCreate, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
-    doc = Document(**payload.model_dump(), status="draft", created_by=current_user.id)
+def create_document(payload: DocumentCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    data = payload.model_dump()
+    data["department_id"] = document_department_for_user(db, current_user, data.get("department_id"))
+    doc = Document(**data, status="draft", created_by=current_user.id)
     db.add(doc)
     db.commit()
     db.refresh(doc)
@@ -474,24 +526,28 @@ def get_document(document_id: str, db: Session = Depends(get_db), current_user: 
     uploaders = {item.id: item for item in db.scalars(select(User).where(User.id.in_(uploader_ids))).all()} if uploader_ids else {}
     return {
         **document_dict(doc, assignments),
-        "assignments": [assignment_dict(item) for item in assignments],
+        "assignments": [assignment_dict(item, reviews=assignment_reviews(db, item.id)) for item in assignments],
         "comments": [comment_dict(item) for item in comments],
         "attachments": [attachment_to_dict(item, uploaders.get(item.uploaded_by)) for item in attachments],
         "my_permissions": {
-            "can_update": current_user.role == "manager",
-            "can_assign": current_user.role == "manager",
-            "can_delete": current_user.role == "manager",
+            "can_update": can_manage_document(current_user, doc),
+            "can_assign": can_manage_document(current_user, doc),
+            "can_delete": can_manage_document(current_user, doc),
+            "can_review": can_manage_document(current_user, doc),
         },
     }
 
 
 @router.patch("/{document_id}")
-def update_document(document_id: str, payload: DocumentUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def update_document(document_id: str, payload: DocumentUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     doc = db.get(Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
     ensure_manager_owner(current_user, doc)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if "department_id" in changes:
+        changes["department_id"] = document_department_for_user(db, current_user, changes["department_id"])
+    for key, value in changes.items():
         setattr(doc, key, value)
     sync_document_status(db, doc)
     db.commit()
@@ -505,13 +561,16 @@ def assign_document(
     payload: AssignmentCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_manager),
+    current_user: User = Depends(require_admin),
 ):
     doc = db.get(Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
     ensure_manager_owner(current_user, doc)
-    staff = db.scalars(select(User).where(User.id.in_(payload.assignee_ids), User.role == "staff", User.is_active.is_(True))).all()
+    staff_query = select(User).where(User.id.in_(payload.assignee_ids), User.role == "staff", User.is_active.is_(True))
+    if doc.department_id:
+        staff_query = staff_query.where(User.department_id == doc.department_id)
+    staff = db.scalars(staff_query).all()
     if len(staff) != len(set(payload.assignee_ids)):
         raise HTTPException(status_code=400, detail="Danh sách nhân viên không hợp lệ")
     existing = {
@@ -564,7 +623,7 @@ def assign_document(
 
 
 @router.delete("/{document_id}", status_code=204)
-def delete_document(document_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def delete_document(document_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     doc = db.get(Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
@@ -591,6 +650,8 @@ def delete_document(document_id: str, background_tasks: BackgroundTasks, db: Ses
     db.query(Notification).filter(Notification.document_id == doc.id).delete(synchronize_session=False)
     db.query(DocumentComment).filter(DocumentComment.document_id == doc.id).delete(synchronize_session=False)
     db.query(DocumentAttachment).filter(DocumentAttachment.document_id == doc.id).delete(synchronize_session=False)
+    if assignment_ids:
+        db.query(AssignmentReview).filter(AssignmentReview.assignment_id.in_(assignment_ids)).delete(synchronize_session=False)
     db.query(DocumentAssignment).filter(DocumentAssignment.document_id == doc.id).delete(synchronize_session=False)
     db.delete(doc)
     db.commit()
@@ -636,17 +697,23 @@ async def upload_attachment(
         raise HTTPException(status_code=404, detail="Không tìm thấy văn bản")
     assignments = document_assignments(db, doc.id)
     ensure_can_view(current_user, doc, assignments)
-    # Manager can only upload original files when document has no assignments yet
-    if current_user.role == "manager" and not assignment_id and assignments:
+    # Admin can only upload original files while the document has no assignments yet.
+    if can_manage_document(current_user, doc) and not assignment_id and assignments:
         raise HTTPException(status_code=400, detail="Văn bản đã giao việc, không thể thêm file gốc")
     if current_user.role == "staff" and not assignment_id:
         raise HTTPException(status_code=400, detail="Nhân viên chỉ được upload file kết quả cho việc được giao")
+    if not assignment_id and not can_manage_document(current_user, doc):
+        raise HTTPException(status_code=403, detail="Bạn không được upload file gốc cho văn bản này")
     if assignment_id:
         assignment = next((item for item in assignments if item.id == assignment_id), None)
         if not assignment:
             raise HTTPException(status_code=400, detail="Assignment không thuộc văn bản này")
         if current_user.role == "staff" and assignment.assignee_id != current_user.id:
             raise HTTPException(status_code=403, detail="Bạn không được upload file cho việc của người khác")
+        if current_user.role == "staff" and assignment.status == "approved":
+            raise HTTPException(status_code=400, detail="Việc đã được duyệt, không thể bổ sung file")
+        if current_user.role != "staff" and not can_manage_document(current_user, doc):
+            raise HTTPException(status_code=403, detail="Bạn không được upload file cho việc này")
     storage_key, size = await get_storage_provider().save(file, f"documents/{doc.id}")
     attachment = DocumentAttachment(
         document_id=doc.id,

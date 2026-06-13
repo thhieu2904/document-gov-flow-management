@@ -13,7 +13,7 @@ CAPTCHA_EXPIRES_SECONDS = 300
 
 
 def _secret() -> bytes:
-    seed = settings.captcha_secret or settings.supabase_service_role_key or settings.database_url or settings.app_name
+    seed = settings.captcha_secret or settings.jwt_secret_key or settings.database_url or settings.app_name
     return seed.encode("utf-8")
 
 

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.deps import require_manager
+from app.core.deps import require_admin
 from app.core.email import build_email_html, link_button
 from app.core.scheduler import configure_scheduler
 from app.email_utils import send_and_log
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/reminders", tags=["reminders"])
 
 
 @router.get("/settings")
-def get_reminder_settings(db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def get_reminder_settings(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     values = get_setting_map(db)
     return {
         **values,
@@ -39,14 +39,14 @@ def get_reminder_settings(db: Session = Depends(get_db), current_user: User = De
 
 
 @router.put("/settings")
-def update_reminder_settings(payload: ReminderSettings, request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def update_reminder_settings(payload: ReminderSettings, request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     values = upsert_setting_map(db, payload.model_dump())
     configure_scheduler(request.app)
     return values
 
 
 @router.post("/email-test")
-async def send_test_email(payload: EmailTestRequest | None = None, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+async def send_test_email(payload: EmailTestRequest | None = None, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     to_email = (payload.to_email if payload else None) or current_user.email
     subject = "[Kiểm tra] Email hệ thống quản lý văn bản"
     html = build_email_html(
@@ -67,47 +67,47 @@ async def send_test_email(payload: EmailTestRequest | None = None, db: Session =
 
 
 @router.post("/preview/staff")
-async def preview_staff_reminders(db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
-    return await run_staff_reminders(db, dry_run=True)
+async def preview_staff_reminders(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    return await run_staff_reminders(db, dry_run=True, current_user=current_user)
 
 
 @router.post("/run/staff")
-async def run_staff_reminders_now(db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
-    return await run_staff_reminders(db, dry_run=False)
+async def run_staff_reminders_now(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    return await run_staff_reminders(db, dry_run=False, current_user=current_user)
 
 
 @router.post("/preview/manager-digest")
-async def preview_manager_digest(db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+async def preview_manager_digest(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     return await run_manager_digest(db, current_user, dry_run=True)
 
 
 @router.post("/run/manager-digest")
-async def run_manager_digest_now(db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+async def run_manager_digest_now(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     return await run_manager_digest(db, current_user, dry_run=False)
 
 
 @router.post("/preview/weekly-report")
-async def preview_weekly_report(db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+async def preview_weekly_report(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     return await run_manager_report(db, current_user, "weekly", dry_run=True)
 
 
 @router.post("/run/weekly-report")
-async def run_weekly_report(db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+async def run_weekly_report(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     return await run_manager_report(db, current_user, "weekly", dry_run=False)
 
 
 @router.post("/preview/monthly-report")
-async def preview_monthly_report(db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+async def preview_monthly_report(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     return await run_manager_report(db, current_user, "monthly", dry_run=True)
 
 
 @router.post("/run/monthly-report")
-async def run_monthly_report(db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+async def run_monthly_report(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     return await run_manager_report(db, current_user, "monthly", dry_run=False)
 
 
 @router.get("/email-logs")
-def list_email_logs(event_type: str | None = None, status: str | None = None, limit: int = 100, db: Session = Depends(get_db), current_user: User = Depends(require_manager)):
+def list_email_logs(event_type: str | None = None, status: str | None = None, limit: int = 100, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     query = select(EmailLog).order_by(EmailLog.created_at.desc()).limit(min(max(limit, 1), 200))
     if event_type:
         query = query.where(EmailLog.event_type == event_type)

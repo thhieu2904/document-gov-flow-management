@@ -8,7 +8,7 @@ import { Empty, PageTitle, Panel, SystemModal } from "./shared";
 type UserModalState = { mode: "create" } | { mode: "edit"; user: User };
 
 function departmentName(departments: Department[], user: User) {
-  if (user.role === "manager") return "Toàn hệ thống";
+  if (user.role === "superadmin") return "Toàn hệ thống";
   return departments.find((item) => item.id === user.department_id)?.name || "-";
 }
 
@@ -52,7 +52,7 @@ export function UsersView({ users, departments, currentUser, onChanged }: { user
           <button className="icon-text-btn"><Search size={16} /> Tìm</button>
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <select className="field" value={role} onChange={(e) => setRole(e.target.value as "all" | Role)}><option value="all">Tất cả vai trò</option><option value="staff">Nhân viên</option><option value="manager">Quản lý</option></select>
+          <select className="field" value={role} onChange={(e) => setRole(e.target.value as "all" | Role)}><option value="all">Tất cả vai trò</option>{currentUser.role === "superadmin" ? <option value="superadmin">Quản trị toàn hệ thống</option> : null}<option value="manager">Quản lý</option><option value="staff">Nhân viên</option></select>
           <select className="field" value={department} onChange={(e) => setDepartment(e.target.value)}><option value="all">Tất cả phòng ban</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}{d.is_active ? "" : " (đã xóa)"}</option>)}</select>
           <select className="field" value={status} onChange={(e) => setStatus(e.target.value as "all" | "active" | "locked")}><option value="all">Tất cả trạng thái</option><option value="active">Đang hoạt động</option><option value="locked">Tạm khóa</option></select>
         </div>
@@ -96,11 +96,15 @@ export function UsersView({ users, departments, currentUser, onChanged }: { user
 function UserModal({ state, currentUser, departments, onClose, onDone }: { state: UserModalState; currentUser: User; departments: Department[]; onClose: () => void; onDone: () => Promise<void> }) {
   const editing = state.mode === "edit";
   const user = state.mode === "edit" ? state.user : null;
+  const canEditRoles = currentUser.role === "superadmin";
+  const initialDepartmentId = user
+    ? (user.role !== "superadmin" ? user.department_id || "" : "")
+    : (currentUser.role === "manager" ? currentUser.department_id || "" : "");
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [email, setEmail] = useState(user?.email || "");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>(user?.role || "staff");
-  const [departmentId, setDepartmentId] = useState(user?.role === "staff" ? user.department_id || "" : "");
+  const [departmentId, setDepartmentId] = useState(initialDepartmentId);
   const [positionLabel, setPositionLabel] = useState(user?.position_label || "");
   const [isActive, setIsActive] = useState(user?.is_active ?? true);
   const [showPassword, setShowPassword] = useState(false);
@@ -108,18 +112,21 @@ function UserModal({ state, currentUser, departments, onClose, onDone }: { state
   const [managerWarning, setManagerWarning] = useState(false);
 
   function switchRole(nextRole: Role) {
+    if (!canEditRoles) return;
     if (nextRole === "manager" && role !== "manager") {
       setManagerWarning(true);
       return;
     }
     setRole(nextRole);
+    if (nextRole === "superadmin") setDepartmentId("");
+    else if (!departmentId) setDepartmentId(currentUser.department_id || "");
   }
 
   function payload() {
     return {
       full_name: fullName.trim(),
       role,
-      department_id: role === "staff" ? departmentId || null : null,
+      department_id: role === "superadmin" ? null : departmentId || null,
       position_label: positionLabel.trim() || null,
       is_active: isActive,
     };
@@ -152,10 +159,13 @@ function UserModal({ state, currentUser, departments, onClose, onDone }: { state
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-5">
       <form onSubmit={submit} className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between"><h3 className="text-lg font-black">{editing ? `Chỉnh sửa - ${user?.full_name}` : "Thêm người dùng"}</h3><button type="button" onClick={onClose}>Đóng</button></div>
-        <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-          <button type="button" className={role === "staff" ? "rounded-md bg-[#214b74] px-4 py-2 text-sm font-bold text-white" : "rounded-md px-4 py-2 text-sm font-bold text-slate-600"} onClick={() => switchRole("staff")}>Nhân viên</button>
-          <button type="button" className={role === "manager" ? "rounded-md bg-[#214b74] px-4 py-2 text-sm font-bold text-white" : "rounded-md px-4 py-2 text-sm font-bold text-slate-600"} onClick={() => switchRole("manager")}>Quản lý</button>
-        </div>
+        {canEditRoles ? (
+          <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <button type="button" className={role === "staff" ? "rounded-md bg-[#214b74] px-4 py-2 text-sm font-bold text-white" : "rounded-md px-4 py-2 text-sm font-bold text-slate-600"} onClick={() => switchRole("staff")}>Nhân viên</button>
+            <button type="button" className={role === "manager" ? "rounded-md bg-[#214b74] px-4 py-2 text-sm font-bold text-white" : "rounded-md px-4 py-2 text-sm font-bold text-slate-600"} onClick={() => switchRole("manager")}>Quản lý</button>
+            <button type="button" className={role === "superadmin" ? "rounded-md bg-[#214b74] px-4 py-2 text-sm font-bold text-white" : "rounded-md px-4 py-2 text-sm font-bold text-slate-600"} onClick={() => switchRole("superadmin")}>Superadmin</button>
+          </div>
+        ) : <p className="mb-4 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-[#214b74]">Bạn đang tạo/sửa nhân viên trong phòng ban của mình.</p>}
         {error ? <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
         <div className="grid grid-cols-2 gap-3">
           <label className="col-span-2 text-sm font-bold">Họ tên *<input className="field mt-1 w-full" value={fullName} onChange={(e) => setFullName(e.target.value)} required /></label>
@@ -171,15 +181,15 @@ function UserModal({ state, currentUser, departments, onClose, onDone }: { state
               </div>
             </label>
           ) : null}
-          {role === "staff" ? <label className="text-sm font-bold">Phòng ban *<select className="field mt-1 w-full" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} required><option value="">Chọn phòng ban</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label> : <div className="rounded-lg bg-blue-50 p-3 text-sm font-bold text-[#214b74]">Quản lý có quyền toàn hệ thống, không gắn phòng ban.</div>}
+          {role !== "superadmin" ? <label className="text-sm font-bold">Phòng ban *<select className="field mt-1 w-full" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} required disabled={!canEditRoles}><option value="">Chọn phòng ban</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label> : <div className="rounded-lg bg-blue-50 p-3 text-sm font-bold text-[#214b74]">Superadmin có quyền toàn hệ thống, không gắn phòng ban.</div>}
           <label className="text-sm font-bold">Chức vụ<input className="field mt-1 w-full" value={positionLabel} onChange={(e) => setPositionLabel(e.target.value)} /></label>
           {editing ? <label className="col-span-2 flex items-center gap-2 rounded-lg border p-3 text-sm font-bold"><input type="checkbox" disabled={user?.id === currentUser.id} checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Trạng thái: {isActive ? "Đang hoạt động" : "Tạm khóa"}</label> : null}
         </div>
         <div className="mt-5 flex justify-end gap-2"><button type="button" className="icon-text-btn" onClick={onClose}>Hủy</button><button className="primary-btn"><Plus size={16} /> {editing ? "Lưu" : "Thêm"}</button></div>
       </form>
-      {managerWarning ? <SystemModal title="Tạo tài khoản quản lý" onClose={() => setManagerWarning(false)} action={<><button className="icon-text-btn" onClick={() => setManagerWarning(false)}>Hủy</button><button className="primary-btn" onClick={() => { setRole("manager"); setDepartmentId(""); setManagerWarning(false); }}>Tôi hiểu</button></>}>
-        <p>Tài khoản quản lý có quyền tạo văn bản, giao việc, quản lý người dùng và phòng ban.</p>
-        <p className="mt-2">Hệ thống hiện ưu tiên mô hình một quản lý chính và nhiều nhân viên. Chỉ tạo thêm quản lý khi thật sự cần.</p>
+      {managerWarning ? <SystemModal title="Tạo tài khoản quản lý" onClose={() => setManagerWarning(false)} action={<><button className="icon-text-btn" onClick={() => setManagerWarning(false)}>Hủy</button><button className="primary-btn" onClick={() => { setRole("manager"); if (!departmentId) setDepartmentId(currentUser.department_id || ""); setManagerWarning(false); }}>Tôi hiểu</button></>}>
+        <p>Tài khoản quản lý sẽ xem và xử lý văn bản trong phòng ban được gắn.</p>
+        <p className="mt-2">Hệ thống hiện ưu tiên một quản lý chính cho mỗi phòng ban. Chỉ tạo thêm quản lý khi thật sự cần.</p>
       </SystemModal> : null}
     </div>
   );
