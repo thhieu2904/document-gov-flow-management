@@ -11,21 +11,13 @@ type CaptchaChallenge = {
 };
 
 export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
-  const [email, setEmail] = useState("thhieu2904@gmail.com");
-  const [password, setPassword] = useState("password123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [captchaLoading, setCaptchaLoading] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const demo = [
-    ["thhieu2904@gmail.com", "Superadmin: quản lý toàn hệ thống"],
-    ["nguyenvanquang.vms@gmail.com", "Superadmin: quản lý toàn hệ thống"],
-    ["quanly.vanhanh@example.com", "Quản lý: xử lý văn bản trong phòng ban"],
-    ["nhanvien1@example.com", "Nhân viên: nhận việc, gửi lại kết quả"],
-    ["nhanvien2@example.com", "Nhân viên: có việc đang làm/quá hạn"],
-    ["nhanvien3@example.com", "Nhân viên: có việc đã hoàn tất"],
-  ];
 
   const refreshCaptcha = useCallback(async (showError = true) => {
     setCaptchaLoading(true);
