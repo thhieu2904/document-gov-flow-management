@@ -176,7 +176,7 @@ export function KpiDisplayView() {
               ))}
             </div>
 
-            <Panel title={selectedStatus === "all" ? "So sánh 21 chỉ tiêu với mốc 100%" : `Đang làm nổi bật nhóm: ${labels.kpiStatus[selectedStatus]}`} icon={<BarChart3 size={18} />} bodyClassName="h-[780px]">
+            <Panel title={selectedStatus === "all" ? `So sánh ${summary.total} chỉ tiêu với mốc 100%` : `Đang làm nổi bật nhóm: ${labels.kpiStatus[selectedStatus]}`} icon={<BarChart3 size={18} />} bodyClassName="h-[780px]">
               <ResponsiveContainer width="100%" height={700}>
                 <BarChart data={chartRows} layout="vertical" margin={{ top: 16, right: 58, left: 8, bottom: 12 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />

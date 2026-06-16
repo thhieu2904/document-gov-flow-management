@@ -138,7 +138,7 @@ export function KpiInputView({ currentUser }: { currentUser: User }) {
     <section>
       <PageTitle
         title="Nhập chỉ tiêu tháng"
-        desc="Chọn tháng cần nhập. Tháng chưa có dữ liệu sẽ hiện 21 dòng trống, lưu lần đầu sẽ tự ghi nhận tháng đó."
+        desc="Chọn tháng cần nhập. Tháng chưa có dữ liệu sẽ hiện các chỉ tiêu đang dùng, lưu lần đầu sẽ tự ghi nhận tháng đó."
       />
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-lg border bg-white p-3">
         <MonthPicker periods={periods} month={month} year={year} onMonthChange={setMonth} onYearChange={setYear} />
@@ -149,7 +149,7 @@ export function KpiInputView({ currentUser }: { currentUser: User }) {
       </div>
       {notice ? <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">{notice}</p> : null}
       {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
-      <Panel title={`Bảng nhập 21 chỉ tiêu - ${enteredCount} dòng có %`} icon={<Target size={18} />}>
+      <Panel title={`Bảng nhập ${rows?.length || 0} chỉ tiêu - ${enteredCount} dòng có %`} icon={<Target size={18} />}>
         {rowsLoading || !rows ? <Loading /> : rows.length ? (
           <div className="thin-scrollbar overflow-auto">
             <table className="w-full min-w-[1080px] text-sm text-slate-700">
@@ -201,7 +201,7 @@ export function KpiInputView({ currentUser }: { currentUser: User }) {
               </tbody>
             </table>
           </div>
-        ) : <Empty text="Chưa có danh mục 21 chỉ tiêu. Hãy chạy seed danh mục chỉ tiêu trước." />}
+        ) : <Empty text="Chưa có danh mục chỉ tiêu đang dùng. Hãy thêm hoặc khôi phục chỉ tiêu trước." />}
       </Panel>
     </section>
   );

@@ -7,6 +7,7 @@ import { DetailModal } from "./components/DetailModal";
 import { DocumentsView } from "./components/Documents";
 import { Header } from "./components/Header";
 import { KpiDisplayView } from "./components/KpiDisplay";
+import { KpiIndicatorsView } from "./components/KpiIndicators";
 import { KpiInputView } from "./components/KpiMonthly";
 import { Login } from "./components/Login";
 import { RemindersView } from "./components/Reminders";
@@ -50,7 +51,7 @@ export default function App() {
 
   useEffect(() => {
     const isAdmin = currentUser?.role === "superadmin" || currentUser?.role === "manager";
-    if (!isAdmin && (view === "users" || view === "departments" || view === "all_documents" || view === "completed_documents" || view === "reminders" || view === "kpi_input")) setView("dashboard");
+    if (!isAdmin && (view === "users" || view === "departments" || view === "all_documents" || view === "completed_documents" || view === "reminders" || view === "kpi_input" || view === "kpi_indicators")) setView("dashboard");
     if (currentUser?.role === "manager" && view === "departments") setView("dashboard");
   }, [currentUser?.role, view]);
 
@@ -98,6 +99,7 @@ export default function App() {
           {view === "reminders" ? <RemindersView /> : null}
           {view === "kpi_input" ? <KpiInputView currentUser={currentUser} /> : null}
           {view === "kpi_display" ? <KpiDisplayView /> : null}
+          {view === "kpi_indicators" ? <KpiIndicatorsView departments={departments} /> : null}
         </main>
       </div>
       {detail ? <DetailModal detail={detail} currentUser={currentUser} users={users} onClose={() => setDetailId(null)} onReload={reloadDetail} /> : null}

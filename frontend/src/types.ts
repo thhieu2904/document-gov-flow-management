@@ -4,7 +4,7 @@ export type DocumentStatus = "draft" | "in_progress" | "submitted" | "completed"
 export type DisplayStatus = DocumentStatus | "due_soon" | "overdue" | "completed_late";
 export type AssignmentStatus = "pending" | "in_progress" | "submitted" | "returned" | "approved" | "overdue";
 export type KpiStatus = "not_entered" | "exceeded" | "above_98" | "above_68" | "above_50" | "below_50";
-export type View = "dashboard" | "assigned" | "assigned_pending" | "assigned_completed" | "all_documents" | "completed_documents" | "users" | "departments" | "reminders" | "kpi_input" | "kpi_display";
+export type View = "dashboard" | "assigned" | "assigned_pending" | "assigned_completed" | "all_documents" | "completed_documents" | "users" | "departments" | "reminders" | "kpi_input" | "kpi_display" | "kpi_indicators";
 
 export type User = {
   id: string;

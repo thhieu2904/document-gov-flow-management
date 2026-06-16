@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { BarChart3, BellRing, BriefcaseBusiness, Building2, CheckCircle, Database, FileText, ListTodo, LogOut, PencilLine, UsersRound, User as UserIcon } from "lucide-react";
+import { BarChart3, BellRing, BriefcaseBusiness, Building2, CheckCircle, Database, FileText, ListTodo, LogOut, PencilLine, Target, UsersRound, User as UserIcon } from "lucide-react";
 import type { User, View } from "../types";
 import { NavButton } from "./shared";
 import { labels } from "../labels";
@@ -44,6 +44,7 @@ export function Sidebar({ user, view, onChange, onLogout, onOpenProfile }: { use
             <SidebarGroup label="Chỉ tiêu" />
             <NavButton active={view === "kpi_input"} icon={<PencilLine size={17} />} onClick={() => onChange("kpi_input")}>Nhập chỉ tiêu</NavButton>
             <NavButton active={view === "kpi_display"} icon={<BarChart3 size={17} />} onClick={() => onChange("kpi_display")}>Biểu đồ chỉ tiêu</NavButton>
+            <NavButton active={view === "kpi_indicators"} icon={<Target size={17} />} onClick={() => onChange("kpi_indicators")}>Quản lý chỉ tiêu</NavButton>
           </>
         ) : (
           <>
