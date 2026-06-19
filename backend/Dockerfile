@@ -9,8 +9,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create non-root user for security
-RUN adduser --disabled-password --gecos "" --no-create-home appuser
+# Create non-root user for security and set permissions
+RUN adduser --disabled-password --gecos "" --no-create-home appuser && \
+    mkdir -p /app/uploads && \
+    chown -R appuser:appuser /app
+
 USER appuser
 
 ENV PYTHONPATH=/app
