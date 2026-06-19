@@ -5,10 +5,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import assignments, attachments, auth, dashboard, departments, documents, kpi, reminders, users
+from app.api import assignments, attachments, auth, dashboard, departments, documents, kpi, reminders, storage, users
 from app.core.config import settings
 from app.core.database import Base, get_engine
 from app.core.scheduler import configure_scheduler, shutdown_scheduler
+from app.core.storage import LocalStorageProvider, get_storage_provider
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,10 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_runtime()
+    if settings.storage_provider == "local":
+        provider = get_storage_provider("local")
+        if isinstance(provider, LocalStorageProvider):
+            provider.verify_writable()
     Base.metadata.create_all(get_engine())
     configure_scheduler(app)
     yield
@@ -46,6 +51,7 @@ app.include_router(attachments.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(reminders.router, prefix="/api")
 app.include_router(kpi.router, prefix="/api")
+app.include_router(storage.router, prefix="/api")
 
 
 @app.exception_handler(Exception)

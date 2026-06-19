@@ -11,6 +11,7 @@ import { KpiIndicatorsView } from "./components/KpiIndicators";
 import { KpiInputView } from "./components/KpiMonthly";
 import { Login } from "./components/Login";
 import { RemindersView } from "./components/Reminders";
+import { StorageManagementView } from "./components/StorageManagement";
 import { Sidebar } from "./components/Sidebar";
 import { UsersView } from "./components/Users";
 import { SystemModal } from "./components/shared";
@@ -52,7 +53,7 @@ export default function App() {
   useEffect(() => {
     const isAdmin = currentUser?.role === "superadmin" || currentUser?.role === "manager";
     if (!isAdmin && (view === "users" || view === "departments" || view === "all_documents" || view === "completed_documents" || view === "reminders" || view === "kpi_input" || view === "kpi_indicators")) setView("dashboard");
-    if (currentUser?.role === "manager" && view === "departments") setView("dashboard");
+    if (currentUser?.role !== "superadmin" && (view === "departments" || view === "storage")) setView("dashboard");
   }, [currentUser?.role, view]);
 
   useEffect(() => {
@@ -96,6 +97,7 @@ export default function App() {
           {view === "completed_documents" ? <DocumentsView key="completed_documents" scope="assigned_by_me" title="Văn bản đã hoàn tất" mode="all" currentUser={currentUser} users={users} departments={departments} onOpen={setDetailId} onChanged={refreshReference} initialStatuses={["completed", "completed_late"]} /> : null}
           {view === "users" ? <UsersView users={users} departments={departments} currentUser={currentUser} onChanged={refreshReference} initialDepartmentId={userFilterDepartmentId} onClearInitialDepartment={() => setUserFilterDepartmentId("all")} /> : null}
           {view === "departments" && currentUser.role === "superadmin" ? <DepartmentsView departments={departments} users={users} onChanged={refreshReference} onViewUsers={(deptId) => { setUserFilterDepartmentId(deptId); setView("users"); }} /> : null}
+          {view === "storage" && currentUser.role === "superadmin" ? <StorageManagementView /> : null}
           {view === "reminders" ? <RemindersView /> : null}
           {view === "kpi_input" ? <KpiInputView currentUser={currentUser} /> : null}
           {view === "kpi_display" ? <KpiDisplayView /> : null}

@@ -76,27 +76,47 @@ class LocalStorageProvider(StorageProvider):
         self.base_path = Path(getattr(settings, "local_storage_path", "") or "uploads").resolve()
         self.base_path.mkdir(parents=True, exist_ok=True)
 
+    def _resolve_target(self, storage_key: str) -> Path:
+        target = (self.base_path / storage_key).resolve()
+        try:
+            target.relative_to(self.base_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Duong dan file khong hop le") from exc
+        return target
+
+    def verify_writable(self) -> None:
+        probe = self.base_path / f".write-test-{uuid4().hex}"
+        try:
+            probe.write_bytes(b"")
+        except OSError as exc:
+            raise RuntimeError(
+                f"Local storage path is not writable by the backend user: {self.base_path}"
+            ) from exc
+        finally:
+            try:
+                probe.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     async def save(self, file: UploadFile, prefix: str) -> tuple[str, int]:
         content = await file.read()
         validate_upload(file.filename or "file", len(content))
         safe_name = sanitize_filename(file.filename or "file")
         key = f"{prefix}/{uuid4().hex}_{safe_name}"
-        target = (self.base_path / key).resolve()
-        if not str(target).startswith(str(self.base_path)):
-            raise HTTPException(status_code=400, detail="Duong dan file khong hop le")
+        target = self._resolve_target(key)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
         return key, len(content)
 
     def open_for_read(self, storage_key: str):
-        target = (self.base_path / storage_key).resolve()
-        if not str(target).startswith(str(self.base_path)) or not target.exists():
+        target = self._resolve_target(storage_key)
+        if not target.is_file():
             raise HTTPException(status_code=404, detail="File khong ton tai")
         return target.open("rb")
 
     def delete(self, storage_key: str) -> None:
-        target = (self.base_path / storage_key).resolve()
-        if str(target).startswith(str(self.base_path)) and target.exists():
+        target = self._resolve_target(storage_key)
+        if target.is_file() and not target.is_symlink():
             target.unlink()
 
 

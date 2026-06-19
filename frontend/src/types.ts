@@ -4,7 +4,33 @@ export type DocumentStatus = "draft" | "in_progress" | "submitted" | "completed"
 export type DisplayStatus = DocumentStatus | "due_soon" | "overdue" | "completed_late";
 export type AssignmentStatus = "pending" | "in_progress" | "submitted" | "returned" | "approved" | "overdue";
 export type KpiStatus = "not_entered" | "exceeded" | "above_98" | "above_68" | "above_50" | "below_50";
-export type View = "dashboard" | "assigned" | "assigned_pending" | "assigned_completed" | "all_documents" | "completed_documents" | "users" | "departments" | "reminders" | "kpi_input" | "kpi_display" | "kpi_indicators";
+export type View = "dashboard" | "assigned" | "assigned_pending" | "assigned_completed" | "all_documents" | "completed_documents" | "users" | "departments" | "storage" | "reminders" | "kpi_input" | "kpi_display" | "kpi_indicators";
+
+export type StorageStats = {
+  scanned_at: string;
+  writable: boolean;
+  minimum_orphan_age_hours: number;
+  total_files: number;
+  total_size_bytes: number;
+  referenced_files: number;
+  referenced_size_bytes: number;
+  orphan_files: number;
+  orphan_size_bytes: number;
+  cleanup_eligible_files: number;
+  cleanup_eligible_size_bytes: number;
+  missing_files: number;
+  missing_expected_size_bytes: number;
+  scan_errors: string[];
+};
+
+export type StorageCleanupResult = {
+  deleted_files: number;
+  deleted_size_bytes: number;
+  skipped_files: number;
+  failed_files: number;
+  errors: Array<{ key: string; message: string }>;
+  stats: StorageStats;
+};
 
 export type User = {
   id: string;

@@ -638,11 +638,7 @@ def delete_document(document_id: str, background_tasks: BackgroundTasks, db: Ses
     doc_code = doc.code
     assignment_ids = [item.id for item in assignments]
     attachments = db.scalars(select(DocumentAttachment).where(DocumentAttachment.document_id == doc.id)).all()
-    for attachment in attachments:
-        try:
-            get_storage_provider(attachment.storage_provider).delete(attachment.storage_key)
-        except Exception:
-            pass
+    stored_files = [(attachment.storage_provider, attachment.storage_key) for attachment in attachments]
     email_log_filter = EmailLog.document_id == doc.id
     if assignment_ids:
         email_log_filter = or_(email_log_filter, EmailLog.assignment_id.in_(assignment_ids))
@@ -655,6 +651,11 @@ def delete_document(document_id: str, background_tasks: BackgroundTasks, db: Ses
     db.query(DocumentAssignment).filter(DocumentAssignment.document_id == doc.id).delete(synchronize_session=False)
     db.delete(doc)
     db.commit()
+    for storage_provider, storage_key in stored_files:
+        try:
+            get_storage_provider(storage_provider).delete(storage_key)
+        except Exception:
+            pass
     # Send deletion notification emails
     for staff in staff_to_notify:
         subject, html = email_document_deleted(doc_title, doc_code, staff.full_name)
@@ -714,7 +715,8 @@ async def upload_attachment(
             raise HTTPException(status_code=400, detail="Việc đã được duyệt, không thể bổ sung file")
         if current_user.role != "staff" and not can_manage_document(current_user, doc):
             raise HTTPException(status_code=403, detail="Bạn không được upload file cho việc này")
-    storage_key, size = await get_storage_provider().save(file, f"documents/{doc.id}")
+    storage_provider = get_storage_provider()
+    storage_key, size = await storage_provider.save(file, f"documents/{doc.id}")
     attachment = DocumentAttachment(
         document_id=doc.id,
         assignment_id=assignment_id,
@@ -726,6 +728,14 @@ async def upload_attachment(
         uploaded_by=current_user.id,
     )
     db.add(attachment)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            storage_provider.delete(storage_key)
+        except Exception:
+            pass
+        raise
     db.refresh(attachment)
     return attachment_to_dict(attachment, current_user)
