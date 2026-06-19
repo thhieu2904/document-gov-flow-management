@@ -25,29 +25,39 @@ services:
     expose:
       - "8000"
     environment:
-      - APP_ENV=local
-      - FRONTEND_URL=http://localhost
+      - APP_ENV=production
+      - FRONTEND_URL=https://vanbanxalongphu.info.vn
+      - CORS_ORIGINS=https://vanbanxalongphu.info.vn,http://localhost
       - DATABASE_URL=postgresql+psycopg://admin:adminpassword@postgres:5432/document_flow
       - AUTH_PROVIDER=local
       - STORAGE_PROVIDER=local
       - LOCAL_STORAGE_PATH=/app/uploads
-      - JWT_SECRET_KEY=dev_local_jwt_secret_key_change_in_production
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-thay-doi-key-nay-truoc-khi-chay}
       - JWT_EXPIRES_MINUTES=1440
+      - MAX_UPLOAD_MB=50
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-noreply@vanbanxalongphu.info.vn}
+      - SMTP_FROM_NAME=Hệ thống Quản lý Văn bản
     volumes:
-      - ./backend:/app
-      - ./runtime/uploads:/app/uploads
+      - uploads_data:/app/uploads
 
   frontend:
-    image: node:20-alpine
-    working_dir: /app
+    build:
+      context: ./frontend
     restart: unless-stopped
-    volumes:
-      - ./frontend:/app
-    environment:
-      - VITE_API_PROXY_TARGET=http://backend:8000
-    command: sh -c "npm install && npx vite --host 0.0.0.0 --port 80"
+    depends_on:
+      - backend
     ports:
       - "80:80"
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      - frontend
+
 volumes:
   postgres_data:
+  uploads_data:

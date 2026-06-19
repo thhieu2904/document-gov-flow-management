@@ -74,7 +74,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
   return (
     <main className="min-h-screen bg-[#214b74] px-6 py-10 flex items-center justify-center">
       <div className="w-full max-w-[440px]">
-        <form onSubmit={submit} className="rounded-xl bg-white p-6 shadow-xl">
+        <form onSubmit={submit} className="rounded-xl bg-white p-6 shadow-xl" autoComplete="off">
           <div className="mb-6 flex items-center gap-4">
             <img src="/LOGO_HCC.jpg" className="h-16 w-16 rounded-full border object-cover p-1" />
             <div>
@@ -82,8 +82,8 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
               <h2 className="text-xl font-black">Đăng nhập</h2>
             </div>
           </div>
-          <label className="mb-3 block text-sm font-bold">Email<input className="field mt-1 w-full" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-          <label className="mb-3 block text-sm font-bold">Mật khẩu<input className="field mt-1 w-full" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+          <label className="mb-3 block text-sm font-bold">Email<input className="field mt-1 w-full" name="login-email-manual" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+          <label className="mb-3 block text-sm font-bold">Mật khẩu<input className="field mt-1 w-full" name="login-password-manual" autoComplete="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
           <label className="mb-4 block text-sm font-bold">Mã xác nhận
             <div className="mt-1 grid gap-2 sm:grid-cols-[auto_1fr_auto]">
               <div className="flex h-11 min-w-32 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-4 font-mono text-lg font-black tracking-[0.28em] text-[#214b74]">
