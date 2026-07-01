@@ -26,8 +26,8 @@ services:
       - "8000"
     environment:
       - APP_ENV=production
-      - FRONTEND_URL=https://vanbanxalongphu.info.vn
-      - CORS_ORIGINS=https://vanbanxalongphu.info.vn,http://localhost
+      - FRONTEND_URL=https://vanbanxalongphu.shop
+      - CORS_ORIGINS=https://vanbanxalongphu.shop,http://localhost
       - DATABASE_URL=postgresql+psycopg://admin:adminpassword@postgres:5432/document_flow
       - AUTH_PROVIDER=local
       - STORAGE_PROVIDER=local
@@ -40,7 +40,11 @@ services:
       - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-noreply@vanbanxalongphu.info.vn}
       - SMTP_FROM_NAME=Hệ thống Quản lý Văn bản
     volumes:
-      - uploads_data:/app/uploads
+      - type: bind
+        source: "${UPLOADS_HOST_PATH:-D:/QLVB/uploads}"
+        target: /app/uploads
+        bind:
+          create_host_path: false
 
   frontend:
     build:
@@ -60,4 +64,3 @@ services:
 
 volumes:
   postgres_data:
-  uploads_data:
